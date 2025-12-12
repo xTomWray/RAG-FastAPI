@@ -1,0 +1,28 @@
+# Production dependencies - pinned versions for reproducibility
+# Generated from pyproject.toml
+
+# Core Framework
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+pydantic-settings==2.2.1
+
+# Vector Search
+faiss-cpu==1.8.0
+chromadb==0.4.24
+
+# Embeddings
+sentence-transformers==2.5.1
+torch==2.2.1
+
+# Document Processing
+unstructured==0.12.6
+pypdf==4.1.0
+
+# Platform-specific (handled in pyproject.toml)
+# python-magic-bin>=0.4.14;sys_platform=='win32'
+# python-magic>=0.4.27;sys_platform!='win32'
+
+# Utilities
+numpy==1.26.4
+httpx==0.27.0
+
