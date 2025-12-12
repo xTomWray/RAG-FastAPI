@@ -40,6 +40,8 @@ dependencies = [
     "python-magic>=0.4.27;sys_platform!='win32'",
     "numpy>=1.24.0",
     "httpx>=0.26.0",
+    # GraphRAG dependencies
+    "networkx>=3.2.0",
 ]
 
 [project.optional-dependencies]
@@ -59,8 +61,11 @@ ocr = [
     "pytesseract>=0.3.10",
     "pdf2image>=1.16.0",
 ]
+graphrag = [
+    "neo4j>=5.15.0",
+]
 all = [
-    "rag-documentation-service[dev,gpu,ocr]",
+    "rag-documentation-service[dev,gpu,ocr,graphrag]",
 ]
 
 [project.urls]

@@ -85,6 +85,58 @@ class Settings(BaseSettings):
         description="Logging level",
     )
 
+    # Graph Store Configuration
+    graph_store_backend: Literal["neo4j", "memory"] = Field(
+        default="memory",
+        description="Graph store backend to use",
+    )
+    neo4j_uri: str = Field(
+        default="bolt://localhost:7687",
+        description="Neo4j connection URI",
+    )
+    neo4j_user: str = Field(
+        default="neo4j",
+        description="Neo4j username",
+    )
+    neo4j_password: str = Field(
+        default="password",
+        description="Neo4j password",
+    )
+    neo4j_database: str = Field(
+        default="neo4j",
+        description="Neo4j database name",
+    )
+
+    # Query Router Configuration
+    router_mode: Literal["pattern", "llm"] = Field(
+        default="pattern",
+        description="Query classification mode",
+    )
+    default_query_strategy: Literal["vector", "graph", "hybrid"] = Field(
+        default="vector",
+        description="Default strategy for ambiguous queries",
+    )
+
+    # Entity Extraction Configuration
+    entity_extraction_mode: Literal["rule_based", "llm"] = Field(
+        default="rule_based",
+        description="Entity extraction mode",
+    )
+    entity_extraction_domain: Literal["general", "mavlink"] = Field(
+        default="general",
+        description="Domain specialization for extraction",
+    )
+    ollama_model: str = Field(
+        default="llama3.2",
+        description="Ollama model for LLM-based extraction/routing",
+    )
+
+    # GraphRAG Feature Flags
+    enable_graph_rag: bool = Field(
+        default=True,
+        description="Enable GraphRAG features",
+    )
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: str | list[str]) -> list[str]:

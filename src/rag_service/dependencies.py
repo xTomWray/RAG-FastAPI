@@ -1,16 +1,23 @@
 """Dependency injection for the RAG service."""
 
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Union
 
 from fastapi import Depends
 
 from rag_service.config import Settings, get_settings
 from rag_service.core.chunker import DocumentChunker, create_chunker
 from rag_service.core.embeddings import SentenceTransformerEmbedding, create_embedding_service
+from rag_service.core.graph_extractor import EntityExtractor, create_extractor
 from rag_service.core.retriever import VectorStore
+from rag_service.core.router import QueryRouter, create_router
 from rag_service.infrastructure.chroma_store import ChromaVectorStore
 from rag_service.infrastructure.faiss_store import FAISSVectorStore
+from rag_service.infrastructure.neo4j_store import (
+    InMemoryGraphStore,
+    Neo4jGraphStore,
+    create_graph_store,
+)
 
 
 @lru_cache
@@ -79,9 +86,73 @@ def get_chunker(
     )
 
 
+@lru_cache
+def get_graph_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Union[Neo4jGraphStore, InMemoryGraphStore]:
+    """Get the graph store singleton.
+
+    Args:
+        settings: Application settings.
+
+    Returns:
+        Configured graph store (Neo4j or in-memory).
+    """
+    if not settings.enable_graph_rag:
+        return InMemoryGraphStore()
+
+    return create_graph_store(
+        backend=settings.graph_store_backend,
+        uri=settings.neo4j_uri,
+        user=settings.neo4j_user,
+        password=settings.neo4j_password,
+    )
+
+
+@lru_cache
+def get_query_router(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> QueryRouter:
+    """Get the query router singleton.
+
+    Args:
+        settings: Application settings.
+
+    Returns:
+        Configured query router.
+    """
+    return create_router(
+        mode=settings.router_mode,
+        default_strategy=settings.default_query_strategy,
+        llm_model=settings.ollama_model,
+    )
+
+
+@lru_cache
+def get_entity_extractor(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> EntityExtractor:
+    """Get the entity extractor singleton.
+
+    Args:
+        settings: Application settings.
+
+    Returns:
+        Configured entity extractor.
+    """
+    return create_extractor(
+        mode=settings.entity_extraction_mode,
+        llm_model=settings.ollama_model,
+        domain=settings.entity_extraction_domain,
+    )
+
+
 # Type aliases for cleaner endpoint signatures
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 EmbeddingServiceDep = Annotated[SentenceTransformerEmbedding, Depends(get_embedding_service)]
 VectorStoreDep = Annotated[VectorStore, Depends(get_vector_store)]
 ChunkerDep = Annotated[DocumentChunker, Depends(get_chunker)]
+GraphStoreDep = Annotated[Union[Neo4jGraphStore, InMemoryGraphStore], Depends(get_graph_store)]
+QueryRouterDep = Annotated[QueryRouter, Depends(get_query_router)]
+EntityExtractorDep = Annotated[EntityExtractor, Depends(get_entity_extractor)]
 
