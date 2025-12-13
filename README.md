@@ -364,13 +364,14 @@ pip install -e ".[ocr]"
 docker build -t rag-service .
 
 # Run container (GUI + API on port 8080)
-docker run -p 8080:8080 -v ./data:/app/data rag-service
+# --restart unless-stopped enables config changes via UI to trigger restart
+docker run -d --restart unless-stopped -p 8080:8080 -v ./data:/app/data --name rag-service rag-service
 
 # Run API-only (no GUI)
-docker run -p 8080:8080 -e ENABLE_GUI=false -v ./data:/app/data rag-service
+docker run -d --restart unless-stopped -p 8080:8080 -e ENABLE_GUI=false -v ./data:/app/data --name rag-service rag-service
 
 # Run with GPU support
-docker run --gpus all -p 8080:8080 -v ./data:/app/data rag-service
+docker run -d --restart unless-stopped --gpus all -p 8080:8080 -v ./data:/app/data --name rag-service rag-service
 ```
 
 Access:

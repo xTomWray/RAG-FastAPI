@@ -252,11 +252,8 @@ def apply_config_runtime(config: dict[str, Any]) -> str:
     Returns:
         Status message.
     """
-    runtime_applied = []
-    restart_required = []
-
     try:
-        # Set environment variables (affects new service instances)
+        # Set environment variables
         env_mapping = {
             "embedding_model": "EMBEDDING_MODEL",
             "device": "DEVICE",
@@ -277,30 +274,55 @@ def apply_config_runtime(config: dict[str, Any]) -> str:
                     value = str(value).lower()
                 os.environ[env_key] = str(value)
 
-        # Apply log level immediately
-        if "log_level" in config:
-            import logging
-
-            logging.getLogger().setLevel(getattr(logging, config["log_level"]))
-            runtime_applied.append("log_level")
-
-        # Mark settings that need restart
-        restart_required = [
-            "embedding_model",
-            "device",
-            "vector_store_backend",
-            "graph_store_backend",
-        ]
-
-        result_parts = ["✅ Environment variables updated"]
-        if runtime_applied:
-            result_parts.append(f"🔄 Applied immediately: {', '.join(runtime_applied)}")
-        result_parts.append(f"⚠️ Restart required for: {', '.join(restart_required)}")
-
-        return "\n".join(result_parts)
+        return "✅ Environment variables updated"
 
     except Exception as e:
         return f"❌ Error applying config: {e}"
+
+
+def apply_and_restart(config: dict[str, Any]) -> str:
+    """Apply configuration and restart the service.
+
+    Saves config to .env, updates environment variables, then triggers
+    a graceful shutdown. Docker will automatically restart the container.
+
+    Args:
+        config: Configuration dictionary.
+
+    Returns:
+        Status message (shown briefly before restart).
+    """
+    import signal
+    import threading
+    import time
+
+    try:
+        # Step 1: Save to .env for persistence
+        save_result = save_config_to_env(config)
+        if save_result.startswith("❌"):
+            return save_result
+
+        # Step 2: Update environment variables
+        apply_config_runtime(config)
+
+        # Step 3: Schedule graceful shutdown after response is sent
+        def delayed_shutdown():
+            time.sleep(1.5)  # Give time for response to be sent
+            logger.info("Initiating service restart via SIGTERM...")
+            os.kill(os.getpid(), signal.SIGTERM)
+
+        threading.Thread(target=delayed_shutdown, daemon=True).start()
+
+        return (
+            "✅ Configuration saved!\n"
+            "🔄 Service restarting in 2 seconds...\n"
+            "⏳ Please wait ~30-60 seconds for reload.\n"
+            "🔃 Page will auto-refresh when ready."
+        )
+
+    except Exception as e:
+        logger.exception("Failed to apply and restart")
+        return f"❌ Error: {e}"
 
 
 def get_config_display() -> tuple:
@@ -846,14 +868,24 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                             label="Log Level",
                         )
 
+                gr.Markdown("---")
+
                 with gr.Row():
-                    load_config_btn = gr.Button("🔄 Load Current Config", size="sm")
-                    apply_runtime_btn = gr.Button("⚡ Apply (Runtime)", variant="secondary")
-                    save_env_btn = gr.Button("💾 Save to .env", variant="primary")
+                    load_config_btn = gr.Button("🔄 Load Current", size="sm")
+                    save_env_btn = gr.Button("💾 Save Only", variant="secondary")
+                    apply_restart_btn = gr.Button(
+                        "🔄 Apply & Restart",
+                        variant="primary",
+                    )
+
+                gr.Markdown(
+                    "*💡 'Apply & Restart' saves config and restarts the service. "
+                    "Page will reconnect automatically (~30-60 sec).*"
+                )
 
                 config_status = gr.Textbox(
                     label="Status",
-                    lines=3,
+                    lines=4,
                     interactive=False,
                 )
 
@@ -887,26 +919,26 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                     ]
                     return dict(zip(keys, values))
 
-                def apply_and_report(*values):
-                    config = collect_config(*values)
-                    return apply_config_runtime(config)
-
                 def save_and_report(*values):
                     config = collect_config(*values)
                     return save_config_to_env(config)
+
+                def apply_restart_and_report(*values):
+                    config = collect_config(*values)
+                    return apply_and_restart(config)
 
                 load_config_btn.click(
                     fn=get_config_display,
                     inputs=[],
                     outputs=config_components,
                 )
-                apply_runtime_btn.click(
-                    fn=apply_and_report,
+                save_env_btn.click(
+                    fn=save_and_report,
                     inputs=config_components,
                     outputs=[config_status],
                 )
-                save_env_btn.click(
-                    fn=save_and_report,
+                apply_restart_btn.click(
+                    fn=apply_restart_and_report,
                     inputs=config_components,
                     outputs=[config_status],
                 )
