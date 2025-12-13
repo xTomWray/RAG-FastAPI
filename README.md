@@ -10,6 +10,8 @@ A cross-platform, open-source RAG (Retrieval-Augmented Generation) API service f
 - **Multiple File Formats** - PDF, Markdown, TXT, XML, HTML, DOCX, and code files
 - **Configurable Models** - Choose embedding models based on your available VRAM
 - **Dual Vector Stores** - FAISS (fastest) or ChromaDB (simpler)
+- **GraphRAG Hybrid Search** - Combines vector similarity with knowledge graphs
+- **Web UI** - Drag-and-drop Gradio interface with smart port detection
 - **Production Ready** - Docker support, health checks, API versioning
 
 ## Quick Start
@@ -50,6 +52,33 @@ The API is now available at http://localhost:8000
 
 - **API Docs**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
+
+### Launch the Web UI
+
+The service includes a drag-and-drop web interface powered by Gradio:
+
+```bash
+# Start the API first (in one terminal)
+python -m rag_service
+
+# Launch the Web UI (in another terminal)
+python -m rag_service.ui.app
+
+# Or using the CLI command
+rag-ui
+
+# With custom options
+rag-ui --port 8080 --api-url http://localhost:8000 --share
+```
+
+The UI automatically finds an available port (starting from 7860) if your preferred port is in use.
+
+**UI Features:**
+- 📁 Drag-and-drop file upload
+- 📂 Index entire folders
+- 🔍 Semantic search with auto/vector/graph/hybrid strategies
+- 📦 Collection management
+- ℹ️ System status monitoring
 
 ### Basic Usage
 
@@ -108,6 +137,26 @@ cp .env.example .env
 | `VECTOR_STORE_BACKEND` | `faiss` | `faiss` or `chroma` |
 | `CHUNK_SIZE` | `512` | Characters per chunk |
 | `CHUNK_OVERLAP` | `50` | Overlap between chunks |
+
+### GraphRAG Configuration
+
+Enable hybrid vector + knowledge graph search:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_GRAPH_RAG` | `false` | Enable graph-based retrieval |
+| `GRAPH_STORE_BACKEND` | `memory` | `memory` (NetworkX) or `neo4j` |
+| `NEO4J_URI` | `bolt://localhost:7687` | Neo4j connection URI |
+| `NEO4J_USER` | `neo4j` | Neo4j username |
+| `NEO4J_PASSWORD` | `password` | Neo4j password |
+| `ROUTER_MODE` | `pattern` | Query routing: `pattern` or `llm` |
+| `ENTITY_EXTRACTION_MODE` | `rule_based` | `rule_based` or `llm` |
+| `ENTITY_EXTRACTION_DOMAIN` | `general` | `general` or `mavlink` |
+
+**When to enable GraphRAG:**
+- Your documents contain highly relational data (protocols, state machines)
+- You need multi-hop reasoning ("What happens after state X?")
+- You want to query entity relationships explicitly
 
 ## Choosing Your Embedding Model
 
@@ -176,11 +225,14 @@ EMBEDDING_MODEL=nvidia/NV-Embed-v2
 | `GET` | `/health` | Liveness probe |
 | `GET` | `/ready` | Readiness probe |
 | `GET` | `/info` | System information |
-| `POST` | `/api/v1/query` | Query documents |
+| `POST` | `/api/v1/query` | Query documents (vector only) |
+| `POST` | `/api/v1/query/hybrid` | Query with smart routing (vector/graph/hybrid) |
+| `GET` | `/api/v1/query/explain` | Explain how a query would be routed |
 | `POST` | `/api/v1/ingest/file` | Index a file |
 | `POST` | `/api/v1/ingest/directory` | Index a directory |
 | `GET` | `/api/v1/collections` | List collections |
 | `DELETE` | `/api/v1/collections/{name}` | Delete a collection |
+| `GET` | `/api/v1/graph/stats/{collection}` | Graph statistics |
 
 ### Query Request
 
@@ -188,9 +240,16 @@ EMBEDDING_MODEL=nvidia/NV-Embed-v2
 {
   "question": "How does authentication work?",
   "top_k": 5,
-  "collection": "documents"
+  "collection": "documents",
+  "strategy": "auto"
 }
 ```
+
+**Strategy options:**
+- `auto` - Smart routing based on query type (recommended)
+- `vector` - Vector similarity search only
+- `graph` - Knowledge graph traversal only
+- `hybrid` - Both vector and graph search
 
 ### Query Response
 
@@ -204,10 +263,20 @@ EMBEDDING_MODEL=nvidia/NV-Embed-v2
       "document_id": "abc123"
     }
   ],
+  "graph_context": [
+    {
+      "entity": "MAVLink",
+      "entity_type": "Protocol",
+      "relationship": "USES",
+      "connected_to": "HMAC-SHA256"
+    }
+  ],
   "sources": ["protocol.pdf"],
   "token_estimate": 450,
   "query": "How does authentication work?",
-  "collection": "documents"
+  "collection": "documents",
+  "strategy_used": "hybrid",
+  "router_reasoning": "Query asks about process relationships"
 }
 ```
 
@@ -358,13 +427,21 @@ make check
 rag-documentation-service/
 ├── src/rag_service/
 │   ├── api/v1/              # API endpoints
+│   │   └── endpoints/
+│   │       ├── query.py     # Query endpoints (hybrid search)
+│   │       └── ingest.py    # Document ingestion
 │   ├── core/                # Business logic
 │   │   ├── embeddings.py    # Embedding service
 │   │   ├── chunker.py       # Document processing
-│   │   └── retriever.py     # Vector store interface
+│   │   ├── retriever.py     # Vector store interface
+│   │   ├── router.py        # Smart query routing
+│   │   └── graph_extractor.py  # Entity extraction
 │   ├── infrastructure/      # External adapters
 │   │   ├── faiss_store.py   # FAISS implementation
-│   │   └── chroma_store.py  # ChromaDB implementation
+│   │   ├── chroma_store.py  # ChromaDB implementation
+│   │   └── neo4j_store.py   # Neo4j graph store
+│   ├── ui/                  # Web interface
+│   │   └── app.py           # Gradio UI
 │   ├── config.py            # Configuration
 │   ├── dependencies.py      # Dependency injection
 │   └── main.py              # FastAPI app

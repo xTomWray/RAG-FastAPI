@@ -42,6 +42,8 @@ dependencies = [
     "httpx>=0.26.0",
     # GraphRAG dependencies
     "networkx>=3.2.0",
+    # UI dependencies
+    "gradio>=4.44.0",
 ]
 
 [project.optional-dependencies]
@@ -76,6 +78,7 @@ Issues = "https://github.com/youruser/rag-documentation-service/issues"
 
 [project.scripts]
 rag-service = "rag_service.__main__:main"
+rag-ui = "rag_service.ui.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rag_service"]
