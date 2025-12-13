@@ -167,8 +167,15 @@ def detect_device() -> str:
     try:
         import torch
 
-        if torch.cuda.is_available():
-            return "cuda"
+        # Check CUDA - must have actual GPU device, not just CUDA libraries
+        if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+            try:
+                # Verify we can actually use the GPU
+                torch.cuda.get_device_name(0)
+                return "cuda"
+            except Exception:
+                pass
+        # Check Apple Silicon MPS
         if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             return "mps"
     except ImportError:

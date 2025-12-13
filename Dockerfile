@@ -130,10 +130,10 @@ USER appuser
 
 ENV HOST=0.0.0.0 \
     PORT=8080 \
-    DEVICE=cuda \
+    DEVICE=auto \
     FAISS_INDEX_DIR=/app/data/index \
     CHROMA_PERSIST_DIR=/app/data/chroma \
-    EMBEDDING_MODEL=BAAI/bge-large-en-v1.5 \
+    EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2 \
     PYTHONPATH=/app/src \
     ENABLE_GUI=true
 

@@ -20,73 +20,49 @@ logger = logging.getLogger(__name__)
 DEFAULT_API_URL = "http://localhost:8080"
 DEFAULT_UI_PORT = 7860
 
-# Editable configuration parameters with descriptions
+# Editable configuration parameters with descriptions and tooltips
 CONFIG_SCHEMA = {
     "embedding_model": {
-        "type": "text",
-        "label": "Embedding Model",
-        "description": "HuggingFace model for embeddings",
         "choices": [
             "sentence-transformers/all-MiniLM-L6-v2",
             "BAAI/bge-large-en-v1.5",
             "intfloat/e5-mistral-7b-instruct",
             "Salesforce/SFR-Embedding-Mistral",
         ],
+        "tooltip": "HuggingFace model ID for generating embeddings. Larger models need more VRAM but produce better results. MiniLM: ~90MB (CPU), bge-large: ~1.3GB (8GB+ VRAM), e5-mistral: ~28GB (50GB+ VRAM)",
     },
     "device": {
-        "type": "dropdown",
-        "label": "Device",
-        "description": "Compute device for inference",
         "choices": ["auto", "cpu", "cuda", "mps"],
+        "tooltip": "Compute device for model inference. 'auto' detects best available (CUDA GPU > Apple MPS > CPU). Use 'cpu' if GPU causes issues.",
     },
     "vector_store_backend": {
-        "type": "dropdown",
-        "label": "Vector Store",
-        "description": "Vector database backend",
         "choices": ["faiss", "chroma"],
+        "tooltip": "Vector database for storing embeddings. FAISS: Fastest, best for large datasets. ChromaDB: Simpler setup, built-in filtering.",
     },
     "chunk_size": {
-        "type": "number",
-        "label": "Chunk Size",
-        "description": "Characters per document chunk",
-        "min": 100,
-        "max": 4096,
+        "tooltip": "Maximum characters per document chunk. Smaller chunks = more precise retrieval but less context. Larger chunks = more context but may include irrelevant text. Typical: 256-1024.",
     },
     "chunk_overlap": {
-        "type": "number",
-        "label": "Chunk Overlap",
-        "description": "Overlap between chunks",
-        "min": 0,
-        "max": 500,
+        "tooltip": "Characters of overlap between consecutive chunks. Helps preserve context across chunk boundaries. Typical: 10-20% of chunk size.",
     },
     "enable_graph_rag": {
-        "type": "checkbox",
-        "label": "Enable GraphRAG",
-        "description": "Enable knowledge graph features",
+        "tooltip": "Enable knowledge graph features for relational queries. Extracts entities and relationships from documents. Best for protocols, state machines, and structured data.",
     },
     "graph_store_backend": {
-        "type": "dropdown",
-        "label": "Graph Store",
-        "description": "Graph database backend",
         "choices": ["memory", "neo4j"],
+        "tooltip": "Graph database backend. 'memory': Fast, no setup, lost on restart. 'neo4j': Persistent, scalable, requires Neo4j server.",
     },
     "router_mode": {
-        "type": "dropdown",
-        "label": "Router Mode",
-        "description": "Query classification method",
         "choices": ["pattern", "llm"],
+        "tooltip": "How queries are classified for routing. 'pattern': Fast rule-based matching. 'llm': Uses Ollama for intelligent classification (requires Ollama running).",
     },
     "entity_extraction_mode": {
-        "type": "dropdown",
-        "label": "Entity Extraction",
-        "description": "How entities are extracted",
         "choices": ["rule_based", "llm"],
+        "tooltip": "How entities/relationships are extracted from text. 'rule_based': Fast regex patterns. 'llm': Uses Ollama for better extraction (slower, requires Ollama).",
     },
     "log_level": {
-        "type": "dropdown",
-        "label": "Log Level",
-        "description": "Logging verbosity",
         "choices": ["DEBUG", "INFO", "WARNING", "ERROR"],
+        "tooltip": "Logging verbosity. DEBUG: All details. INFO: Normal operation. WARNING: Potential issues. ERROR: Only errors.",
     },
 }
 
@@ -809,97 +785,95 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
 
             # Tab 4: Configuration
             with gr.Tab("⚙️ Configuration"):
-                gr.Markdown("### Edit Service Configuration")
-                gr.Markdown("*Changes to embedding model, device, and stores require restart*")
+                gr.Markdown("### Service Configuration")
 
                 # Get initial config values
                 initial_config = load_current_config()
 
                 with gr.Row():
                     with gr.Column():
-                        gr.Markdown("#### Embedding & Processing")
+                        gr.Markdown("**Embedding & Processing**")
                         cfg_embedding_model = gr.Dropdown(
                             choices=CONFIG_SCHEMA["embedding_model"]["choices"],
                             value=initial_config.get("embedding_model", "sentence-transformers/all-MiniLM-L6-v2"),
-                            label="Embedding Model",
-                            info="Choose based on your VRAM",
+                            label="Embedding Model ⓘ",
+                            info=CONFIG_SCHEMA["embedding_model"]["tooltip"],
                             allow_custom_value=True,
                         )
                         cfg_device = gr.Dropdown(
                             choices=CONFIG_SCHEMA["device"]["choices"],
                             value=initial_config.get("device", "auto"),
-                            label="Device",
-                            info="auto detects best available",
+                            label="Device ⓘ",
+                            info=CONFIG_SCHEMA["device"]["tooltip"],
                         )
-                        cfg_chunk_size = gr.Slider(
-                            minimum=100,
-                            maximum=4096,
-                            value=initial_config.get("chunk_size", 512),
-                            step=50,
-                            label="Chunk Size",
-                            info="Characters per chunk",
-                        )
-                        cfg_chunk_overlap = gr.Slider(
-                            minimum=0,
-                            maximum=500,
-                            value=initial_config.get("chunk_overlap", 50),
-                            step=10,
-                            label="Chunk Overlap",
-                            info="Overlap between chunks",
-                        )
+                        with gr.Row():
+                            cfg_chunk_size = gr.Slider(
+                                minimum=100,
+                                maximum=4096,
+                                value=initial_config.get("chunk_size", 512),
+                                step=50,
+                                label="Chunk Size ⓘ",
+                                info=CONFIG_SCHEMA["chunk_size"]["tooltip"],
+                            )
+                            cfg_chunk_overlap = gr.Slider(
+                                minimum=0,
+                                maximum=500,
+                                value=initial_config.get("chunk_overlap", 50),
+                                step=10,
+                                label="Overlap ⓘ",
+                                info=CONFIG_SCHEMA["chunk_overlap"]["tooltip"],
+                            )
 
                     with gr.Column():
-                        gr.Markdown("#### Storage & GraphRAG")
+                        gr.Markdown("**Storage & GraphRAG**")
                         cfg_vector_store = gr.Dropdown(
                             choices=CONFIG_SCHEMA["vector_store_backend"]["choices"],
                             value=initial_config.get("vector_store_backend", "faiss"),
-                            label="Vector Store Backend",
+                            label="Vector Store ⓘ",
+                            info=CONFIG_SCHEMA["vector_store_backend"]["tooltip"],
                         )
                         cfg_enable_graph = gr.Checkbox(
                             value=initial_config.get("enable_graph_rag", False),
-                            label="Enable GraphRAG",
-                            info="Knowledge graph features",
+                            label="Enable GraphRAG ⓘ",
+                            info=CONFIG_SCHEMA["enable_graph_rag"]["tooltip"],
                         )
-                        cfg_graph_store = gr.Dropdown(
-                            choices=CONFIG_SCHEMA["graph_store_backend"]["choices"],
-                            value=initial_config.get("graph_store_backend", "memory"),
-                            label="Graph Store Backend",
-                        )
-                        cfg_router_mode = gr.Dropdown(
-                            choices=CONFIG_SCHEMA["router_mode"]["choices"],
-                            value=initial_config.get("router_mode", "pattern"),
-                            label="Query Router Mode",
-                        )
-                        cfg_entity_mode = gr.Dropdown(
-                            choices=CONFIG_SCHEMA["entity_extraction_mode"]["choices"],
-                            value=initial_config.get("entity_extraction_mode", "rule_based"),
-                            label="Entity Extraction Mode",
-                        )
-                        cfg_log_level = gr.Dropdown(
-                            choices=CONFIG_SCHEMA["log_level"]["choices"],
-                            value=initial_config.get("log_level", "INFO"),
-                            label="Log Level",
-                        )
-
-                gr.Markdown("---")
+                        with gr.Row():
+                            cfg_graph_store = gr.Dropdown(
+                                choices=CONFIG_SCHEMA["graph_store_backend"]["choices"],
+                                value=initial_config.get("graph_store_backend", "memory"),
+                                label="Graph Store ⓘ",
+                                info=CONFIG_SCHEMA["graph_store_backend"]["tooltip"],
+                            )
+                            cfg_router_mode = gr.Dropdown(
+                                choices=CONFIG_SCHEMA["router_mode"]["choices"],
+                                value=initial_config.get("router_mode", "pattern"),
+                                label="Router ⓘ",
+                                info=CONFIG_SCHEMA["router_mode"]["tooltip"],
+                            )
+                        with gr.Row():
+                            cfg_entity_mode = gr.Dropdown(
+                                choices=CONFIG_SCHEMA["entity_extraction_mode"]["choices"],
+                                value=initial_config.get("entity_extraction_mode", "rule_based"),
+                                label="Extraction ⓘ",
+                                info=CONFIG_SCHEMA["entity_extraction_mode"]["tooltip"],
+                            )
+                            cfg_log_level = gr.Dropdown(
+                                choices=CONFIG_SCHEMA["log_level"]["choices"],
+                                value=initial_config.get("log_level", "INFO"),
+                                label="Log Level ⓘ",
+                                info=CONFIG_SCHEMA["log_level"]["tooltip"],
+                            )
 
                 with gr.Row():
-                    with gr.Column(scale=1):
-                        load_config_btn = gr.Button("🔄 Load Configuration", variant="secondary")
-                        save_env_btn = gr.Button("💾 Save Configuration", variant="secondary")
-                    with gr.Column(scale=2):
-                        apply_restart_btn = gr.Button(
-                            "🔄 Apply & Restart Service",
-                            variant="primary",
-                        )
-                        gr.Markdown(
-                            "*Saves config and restarts service (~30-60 sec)*"
-                        )
+                    load_config_btn = gr.Button("🔄 Reload", size="sm", variant="secondary")
+                    save_env_btn = gr.Button("💾 Save", size="sm", variant="secondary")
+                    apply_restart_btn = gr.Button("⚡ Apply & Restart", variant="primary")
 
                 config_status = gr.Textbox(
                     label="Status",
-                    lines=3,
+                    lines=2,
                     interactive=False,
+                    placeholder="Changes require Apply & Restart to take effect",
                 )
 
                 # Config components list for easy reference
