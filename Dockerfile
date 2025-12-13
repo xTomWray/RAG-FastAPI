@@ -4,7 +4,7 @@
 # =============================================================================
 # Base stage with system dependencies
 # =============================================================================
-FROM python:3.11-slim as base
+FROM python:3.11-slim AS base
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # =============================================================================
 # Builder stage for Python dependencies
 # =============================================================================
-FROM base as builder
+FROM base AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -45,7 +45,7 @@ RUN pip install --upgrade pip && \
 # =============================================================================
 # Production stage
 # =============================================================================
-FROM base as production
+FROM base AS production
 
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
@@ -64,26 +64,28 @@ USER appuser
 
 # Set default environment variables
 ENV HOST=0.0.0.0 \
-    PORT=8000 \
+    PORT=8080 \
     DEVICE=cpu \
     FAISS_INDEX_DIR=/app/data/index \
     CHROMA_PERSIST_DIR=/app/data/chroma \
-    EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+    EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2 \
+    PYTHONPATH=/app/src \
+    ENABLE_GUI=true
 
 # Expose port
-EXPOSE 8000
+EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"
+    CMD python -c "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()"
 
 # Run the application
-CMD ["uvicorn", "rag_service.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "rag_service.main:app", "--host", "0.0.0.0", "--port", "8080"]
 
 # =============================================================================
 # GPU stage (CUDA support)
 # =============================================================================
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 as gpu-base
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS gpu-base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -103,7 +105,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/python3.11 /usr/bin/python
 
-FROM gpu-base as gpu
+FROM gpu-base AS gpu
 
 # Copy requirements
 COPY requirements.txt ./
@@ -127,16 +129,18 @@ COPY --chown=appuser:appuser src/ src/
 USER appuser
 
 ENV HOST=0.0.0.0 \
-    PORT=8000 \
+    PORT=8080 \
     DEVICE=cuda \
     FAISS_INDEX_DIR=/app/data/index \
     CHROMA_PERSIST_DIR=/app/data/chroma \
-    EMBEDDING_MODEL=BAAI/bge-large-en-v1.5
+    EMBEDDING_MODEL=BAAI/bge-large-en-v1.5 \
+    PYTHONPATH=/app/src \
+    ENABLE_GUI=true
 
-EXPOSE 8000
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"
+    CMD python -c "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()"
 
-CMD ["uvicorn", "rag_service.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "rag_service.main:app", "--host", "0.0.0.0", "--port", "8080"]
 

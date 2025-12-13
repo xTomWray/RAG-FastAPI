@@ -21,17 +21,9 @@ from rag_service.infrastructure.neo4j_store import (
 
 
 @lru_cache
-def get_embedding_service(
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> SentenceTransformerEmbedding:
-    """Get the embedding service singleton.
-
-    Args:
-        settings: Application settings.
-
-    Returns:
-        Configured embedding service.
-    """
+def get_embedding_service() -> SentenceTransformerEmbedding:
+    """Get the embedding service singleton."""
+    settings = get_settings()
     return create_embedding_service(
         model_name=settings.embedding_model,
         device=settings.get_resolved_device(),
@@ -40,45 +32,26 @@ def get_embedding_service(
 
 
 @lru_cache
-def get_vector_store(
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> VectorStore:
-    """Get the vector store singleton.
-
-    Args:
-        settings: Application settings.
-
-    Returns:
-        Configured vector store.
-    """
-    # Need embedding service to get dimension
-    embedding_service = get_embedding_service(settings)
+def get_vector_store() -> VectorStore:
+    """Get the vector store singleton."""
+    settings = get_settings()
+    embedding_service = get_embedding_service()
 
     if settings.vector_store_backend == "faiss":
         store = FAISSVectorStore(
             persist_dir=settings.faiss_index_dir,
             embedding_dim=embedding_service.embedding_dim,
         )
-        # Load existing indices
         store.load()
         return store
     else:
-        store = ChromaVectorStore(persist_dir=settings.chroma_persist_dir)
-        return store
+        return ChromaVectorStore(persist_dir=settings.chroma_persist_dir)
 
 
 @lru_cache
-def get_chunker(
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> DocumentChunker:
-    """Get the document chunker singleton.
-
-    Args:
-        settings: Application settings.
-
-    Returns:
-        Configured document chunker.
-    """
+def get_chunker() -> DocumentChunker:
+    """Get the document chunker singleton."""
+    settings = get_settings()
     return create_chunker(
         chunk_size=settings.chunk_size,
         chunk_overlap=settings.chunk_overlap,
@@ -87,17 +60,9 @@ def get_chunker(
 
 
 @lru_cache
-def get_graph_store(
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> Union[Neo4jGraphStore, InMemoryGraphStore]:
-    """Get the graph store singleton.
-
-    Args:
-        settings: Application settings.
-
-    Returns:
-        Configured graph store (Neo4j or in-memory).
-    """
+def get_graph_store() -> Union[Neo4jGraphStore, InMemoryGraphStore]:
+    """Get the graph store singleton."""
+    settings = get_settings()
     if not settings.enable_graph_rag:
         return InMemoryGraphStore()
 
@@ -110,17 +75,9 @@ def get_graph_store(
 
 
 @lru_cache
-def get_query_router(
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> QueryRouter:
-    """Get the query router singleton.
-
-    Args:
-        settings: Application settings.
-
-    Returns:
-        Configured query router.
-    """
+def get_query_router() -> QueryRouter:
+    """Get the query router singleton."""
+    settings = get_settings()
     return create_router(
         mode=settings.router_mode,
         default_strategy=settings.default_query_strategy,
@@ -129,17 +86,9 @@ def get_query_router(
 
 
 @lru_cache
-def get_entity_extractor(
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> EntityExtractor:
-    """Get the entity extractor singleton.
-
-    Args:
-        settings: Application settings.
-
-    Returns:
-        Configured entity extractor.
-    """
+def get_entity_extractor() -> EntityExtractor:
+    """Get the entity extractor singleton."""
+    settings = get_settings()
     return create_extractor(
         mode=settings.entity_extraction_mode,
         llm_model=settings.ollama_model,
@@ -155,4 +104,15 @@ ChunkerDep = Annotated[DocumentChunker, Depends(get_chunker)]
 GraphStoreDep = Annotated[Union[Neo4jGraphStore, InMemoryGraphStore], Depends(get_graph_store)]
 QueryRouterDep = Annotated[QueryRouter, Depends(get_query_router)]
 EntityExtractorDep = Annotated[EntityExtractor, Depends(get_entity_extractor)]
+
+
+# Direct accessor functions for non-FastAPI contexts (e.g., startup, info endpoint)
+def get_embedding_service_direct() -> SentenceTransformerEmbedding:
+    """Get embedding service without FastAPI dependency injection."""
+    return get_embedding_service()
+
+
+def get_vector_store_direct() -> VectorStore:
+    """Get vector store without FastAPI dependency injection."""
+    return get_vector_store()
 

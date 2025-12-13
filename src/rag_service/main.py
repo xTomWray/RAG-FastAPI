@@ -1,14 +1,19 @@
 """FastAPI application factory and configuration."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from rag_service.api.v1.router import router as v1_router
 from rag_service.config import get_settings
+
+# Check if GUI should be enabled (default: True)
+ENABLE_GUI = os.environ.get("ENABLE_GUI", "true").lower() not in ("false", "0", "no")
 
 
 def setup_logging() -> None:
@@ -41,11 +46,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         from rag_service.dependencies import get_embedding_service, get_vector_store
 
         logger.info("Loading embedding model...")
-        _ = get_embedding_service(settings)
+        _ = get_embedding_service()
         logger.info("Embedding model loaded successfully")
 
         logger.info("Initializing vector store...")
-        _ = get_vector_store(settings)
+        _ = get_vector_store()
         logger.info("Vector store initialized")
 
     except Exception as e:
@@ -65,6 +70,7 @@ def create_app() -> FastAPI:
         Configured FastAPI application instance.
     """
     settings = get_settings()
+    logger = logging.getLogger(__name__)
 
     app = FastAPI(
         title="RAG Documentation Service",
@@ -95,6 +101,31 @@ def create_app() -> FastAPI:
     from rag_service.api.v1.endpoints import health
 
     app.include_router(health.router)
+
+    # Mount Gradio UI if enabled
+    if ENABLE_GUI:
+        try:
+            import gradio as gr
+
+            from rag_service.ui.app import create_ui
+
+            # Create Gradio interface pointing to localhost API
+            gradio_app = create_ui(api_url=f"http://localhost:{settings.port}")
+
+            # Mount at /ui path
+            app = gr.mount_gradio_app(app, gradio_app, path="/ui")
+
+            # Redirect root to UI
+            @app.get("/", include_in_schema=False)
+            async def redirect_to_ui():
+                return RedirectResponse(url="/ui")
+
+            logger.info("Gradio UI mounted at /ui")
+
+        except ImportError:
+            logger.warning("Gradio not installed, UI disabled")
+        except Exception as e:
+            logger.warning(f"Failed to mount Gradio UI: {e}")
 
     return app
 

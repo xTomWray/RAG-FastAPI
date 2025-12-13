@@ -39,23 +39,24 @@ services:
     image: rag-documentation-service:latest
     container_name: rag-service
     ports:
-      - "8000:8000"
+      - "8080:8080"
     volumes:
       - rag-data:/app/data
       - ./documents:/app/documents:ro
     environment:
       - HOST=0.0.0.0
-      - PORT=8000
+      - PORT=8080
       - DEVICE=cpu
       - EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
       - VECTOR_STORE_BACKEND=faiss
       - CHUNK_SIZE=512
       - CHUNK_OVERLAP=50
       - LOG_LEVEL=INFO
+      - ENABLE_GUI=true
       # GraphRAG disabled for basic setup
       - ENABLE_GRAPH_RAG=false
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -72,19 +73,20 @@ services:
     image: rag-documentation-service:latest
     container_name: rag-service-graphrag
     ports:
-      - "8002:8000"
+      - "8082:8080"
     volumes:
       - rag-data-graphrag:/app/data
       - ./documents:/app/documents:ro
     environment:
       - HOST=0.0.0.0
-      - PORT=8000
+      - PORT=8080
       - DEVICE=cpu
       - EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
       - VECTOR_STORE_BACKEND=faiss
       - CHUNK_SIZE=512
       - CHUNK_OVERLAP=50
       - LOG_LEVEL=INFO
+      - ENABLE_GUI=true
       # GraphRAG enabled
       - ENABLE_GRAPH_RAG=true
       - GRAPH_STORE_BACKEND=neo4j
@@ -98,7 +100,7 @@ services:
       neo4j:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -117,19 +119,20 @@ services:
     image: rag-documentation-service:gpu
     container_name: rag-service-gpu
     ports:
-      - "8001:8000"
+      - "8081:8080"
     volumes:
       - rag-data-gpu:/app/data
       - ./documents:/app/documents:ro
     environment:
       - HOST=0.0.0.0
-      - PORT=8000
+      - PORT=8080
       - DEVICE=cuda
       - EMBEDDING_MODEL=BAAI/bge-large-en-v1.5
       - VECTOR_STORE_BACKEND=faiss
       - CHUNK_SIZE=512
       - CHUNK_OVERLAP=50
       - LOG_LEVEL=INFO
+      - ENABLE_GUI=true
       - ENABLE_GRAPH_RAG=false
     deploy:
       resources:
@@ -139,7 +142,7 @@ services:
               count: 1
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -158,19 +161,20 @@ services:
     image: rag-documentation-service:gpu
     container_name: rag-service-gpu-graphrag
     ports:
-      - "8003:8000"
+      - "8083:8080"
     volumes:
       - rag-data-gpu-graphrag:/app/data
       - ./documents:/app/documents:ro
     environment:
       - HOST=0.0.0.0
-      - PORT=8000
+      - PORT=8080
       - DEVICE=cuda
       - EMBEDDING_MODEL=BAAI/bge-large-en-v1.5
       - VECTOR_STORE_BACKEND=faiss
       - CHUNK_SIZE=512
       - CHUNK_OVERLAP=50
       - LOG_LEVEL=INFO
+      - ENABLE_GUI=true
       # GraphRAG enabled
       - ENABLE_GRAPH_RAG=true
       - GRAPH_STORE_BACKEND=neo4j
@@ -190,7 +194,7 @@ services:
               count: 1
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()"]
       interval: 30s
       timeout: 10s
       retries: 3

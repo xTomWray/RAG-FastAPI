@@ -130,7 +130,6 @@ def _perform_vector_search(
     question: str,
     top_k: int,
     collection: str,
-    settings,
 ) -> list[SearchResultSchema]:
     """Perform vector similarity search.
 
@@ -138,13 +137,12 @@ def _perform_vector_search(
         question: Query text.
         top_k: Number of results.
         collection: Collection to search.
-        settings: App settings.
 
     Returns:
         List of search results.
     """
-    embedding_service = get_embedding_service(settings)
-    vector_store = get_vector_store(settings)
+    embedding_service = get_embedding_service()
+    vector_store = get_vector_store()
 
     query_embedding = embedding_service.embed_query(question)
     results = vector_store.search(
@@ -168,7 +166,6 @@ def _perform_graph_search(
     question: str,
     collection: str,
     hops: int,
-    settings,
 ) -> list[GraphContextItem]:
     """Perform graph traversal search.
 
@@ -176,16 +173,16 @@ def _perform_graph_search(
         question: Query text.
         collection: Collection to search.
         hops: Number of hops to traverse.
-        settings: App settings.
 
     Returns:
         List of graph context items.
     """
+    settings = get_settings()
     if not settings.enable_graph_rag:
         return []
 
     try:
-        graph_store = get_graph_store(settings)
+        graph_store = get_graph_store()
 
         # Find entities mentioned in query
         entity_mentions = _extract_entity_mentions(question, graph_store, collection)
@@ -283,7 +280,6 @@ async def query_documents(request: QueryRequest) -> QueryResponse:
             question=request.question,
             top_k=request.top_k,
             collection=request.collection,
-            settings=settings,
         )
 
         # Get unique sources
@@ -331,7 +327,7 @@ async def hybrid_query(request: HybridQueryRequest) -> HybridQueryResponse:
     try:
         # Determine strategy
         if request.strategy == "auto":
-            query_router = get_query_router(settings)
+            query_router = get_query_router()
             explanation = query_router.get_strategy_explanation(request.question)
             strategy = explanation["strategy"]
             reasoning = explanation["reasoning"]
@@ -348,7 +344,6 @@ async def hybrid_query(request: HybridQueryRequest) -> HybridQueryResponse:
                 question=request.question,
                 top_k=request.top_k,
                 collection=request.collection,
-                settings=settings,
             )
 
         if strategy in ("graph", "hybrid") and settings.enable_graph_rag:
@@ -356,7 +351,6 @@ async def hybrid_query(request: HybridQueryRequest) -> HybridQueryResponse:
                 question=request.question,
                 collection=request.collection,
                 hops=request.graph_hops,
-                settings=settings,
             )
 
         # Collect sources
@@ -401,7 +395,7 @@ async def explain_query_routing(question: str) -> dict[str, Any]:
     settings = get_settings()
 
     try:
-        query_router = get_query_router(settings)
+        query_router = get_query_router()
         explanation = query_router.get_strategy_explanation(question)
 
         return {

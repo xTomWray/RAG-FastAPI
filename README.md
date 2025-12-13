@@ -48,37 +48,30 @@ python -m rag_service
 make run
 ```
 
-The API is now available at http://localhost:8000
+The service is now available at http://localhost:8080
 
-- **API Docs**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
+- **Web UI**: http://localhost:8080 (drag-and-drop interface)
+- **API Docs**: http://localhost:8080/docs
+- **ReDoc**: http://localhost:8080/redoc
 
-### Launch the Web UI
-
-The service includes a drag-and-drop web interface powered by Gradio:
-
-```bash
-# Start the API first (in one terminal)
-python -m rag_service
-
-# Launch the Web UI (in another terminal)
-python -m rag_service.ui.app
-
-# Or using the CLI command
-rag-ui
-
-# With custom options
-rag-ui --port 8080 --api-url http://localhost:8000 --share
-```
-
-The UI automatically finds an available port (starting from 7860) if your preferred port is in use.
-
-**UI Features:**
+The Web UI is enabled by default and provides:
 - 📁 Drag-and-drop file upload
 - 📂 Index entire folders
 - 🔍 Semantic search with auto/vector/graph/hybrid strategies
 - 📦 Collection management
 - ℹ️ System status monitoring
+
+### Disable the Web UI
+
+To run API-only mode without the GUI:
+
+```bash
+# Set ENABLE_GUI=false
+ENABLE_GUI=false python -m rag_service
+
+# Or run standalone UI separately
+python -m rag_service.ui.app --api-url http://localhost:8080
+```
 
 ### Basic Usage
 
@@ -370,9 +363,19 @@ pip install -e ".[ocr]"
 # Build image
 docker build -t rag-service .
 
-# Run container
-docker run -p 8000:8000 -v ./data:/app/data rag-service
+# Run container (GUI + API on port 8080)
+docker run -p 8080:8080 -v ./data:/app/data rag-service
+
+# Run API-only (no GUI)
+docker run -p 8080:8080 -e ENABLE_GUI=false -v ./data:/app/data rag-service
+
+# Run with GPU support
+docker run --gpus all -p 8080:8080 -v ./data:/app/data rag-service
 ```
+
+Access:
+- **Web UI**: http://localhost:8080
+- **API Docs**: http://localhost:8080/docs
 
 ### Docker Compose
 

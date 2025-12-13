@@ -30,9 +30,8 @@ async def readiness_check() -> dict[str, str]:
         Readiness status.
     """
     try:
-        settings = get_settings()
         # Try to get embedding service (validates model loading)
-        _ = get_embedding_service(settings)
+        _ = get_embedding_service()
         return {"status": "ready"}
     except Exception as e:
         return {"status": "not_ready", "error": str(e)}
@@ -62,7 +61,7 @@ async def system_info() -> dict[str, Any]:
     }
 
     try:
-        embedding_service = get_embedding_service(settings)
+        embedding_service = get_embedding_service()
         info["embedding"] = {
             "model": embedding_service.model_name,
             "dimension": embedding_service.embedding_dim,
@@ -72,7 +71,7 @@ async def system_info() -> dict[str, Any]:
         info["embedding"] = {"error": str(e)}
 
     try:
-        vector_store = get_vector_store(settings)
+        vector_store = get_vector_store()
         collections = vector_store.list_collections()
         info["vector_store"] = {
             "backend": settings.vector_store_backend,

@@ -72,7 +72,7 @@ class Settings(BaseSettings):
 
     # API Configuration
     host: str = Field(default="0.0.0.0", description="API host")
-    port: int = Field(default=8000, ge=1, le=65535, description="API port")
+    port: int = Field(default=8080, ge=1, le=65535, description="API port")
     cors_origins: list[str] = Field(
         default=["http://localhost:3000", "http://localhost:8080"],
         description="CORS allowed origins",

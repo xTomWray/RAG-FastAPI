@@ -6,8 +6,8 @@ semantic search queries with hybrid vector/graph retrieval support.
 
 import json
 import logging
+import os
 import socket
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +17,78 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # Default configuration
-DEFAULT_API_URL = "http://localhost:8000"
+DEFAULT_API_URL = "http://localhost:8080"
 DEFAULT_UI_PORT = 7860
+
+# Editable configuration parameters with descriptions
+CONFIG_SCHEMA = {
+    "embedding_model": {
+        "type": "text",
+        "label": "Embedding Model",
+        "description": "HuggingFace model for embeddings",
+        "choices": [
+            "sentence-transformers/all-MiniLM-L6-v2",
+            "BAAI/bge-large-en-v1.5",
+            "intfloat/e5-mistral-7b-instruct",
+            "Salesforce/SFR-Embedding-Mistral",
+        ],
+    },
+    "device": {
+        "type": "dropdown",
+        "label": "Device",
+        "description": "Compute device for inference",
+        "choices": ["auto", "cpu", "cuda", "mps"],
+    },
+    "vector_store_backend": {
+        "type": "dropdown",
+        "label": "Vector Store",
+        "description": "Vector database backend",
+        "choices": ["faiss", "chroma"],
+    },
+    "chunk_size": {
+        "type": "number",
+        "label": "Chunk Size",
+        "description": "Characters per document chunk",
+        "min": 100,
+        "max": 4096,
+    },
+    "chunk_overlap": {
+        "type": "number",
+        "label": "Chunk Overlap",
+        "description": "Overlap between chunks",
+        "min": 0,
+        "max": 500,
+    },
+    "enable_graph_rag": {
+        "type": "checkbox",
+        "label": "Enable GraphRAG",
+        "description": "Enable knowledge graph features",
+    },
+    "graph_store_backend": {
+        "type": "dropdown",
+        "label": "Graph Store",
+        "description": "Graph database backend",
+        "choices": ["memory", "neo4j"],
+    },
+    "router_mode": {
+        "type": "dropdown",
+        "label": "Router Mode",
+        "description": "Query classification method",
+        "choices": ["pattern", "llm"],
+    },
+    "entity_extraction_mode": {
+        "type": "dropdown",
+        "label": "Entity Extraction",
+        "description": "How entities are extracted",
+        "choices": ["rule_based", "llm"],
+    },
+    "log_level": {
+        "type": "dropdown",
+        "label": "Log Level",
+        "description": "Logging verbosity",
+        "choices": ["DEBUG", "INFO", "WARNING", "ERROR"],
+    },
+}
 
 
 def find_available_port(start_port: int = 7860, max_attempts: int = 100) -> int:
@@ -79,6 +149,179 @@ def get_system_info(api_url: str) -> dict[str, Any]:
         return response.json()
     except Exception as e:
         return {"error": str(e)}
+
+
+def load_current_config() -> dict[str, Any]:
+    """Load current configuration from environment and defaults."""
+    from rag_service.config import get_settings
+
+    try:
+        settings = get_settings()
+        return {
+            "embedding_model": settings.embedding_model,
+            "device": settings.device,
+            "vector_store_backend": settings.vector_store_backend,
+            "chunk_size": settings.chunk_size,
+            "chunk_overlap": settings.chunk_overlap,
+            "enable_graph_rag": settings.enable_graph_rag,
+            "graph_store_backend": settings.graph_store_backend,
+            "router_mode": settings.router_mode,
+            "entity_extraction_mode": settings.entity_extraction_mode,
+            "log_level": settings.log_level,
+        }
+    except Exception as e:
+        logger.error(f"Failed to load config: {e}")
+        return {}
+
+
+def save_config_to_env(config: dict[str, Any], env_path: Path = None) -> str:
+    """Save configuration to .env file.
+
+    Args:
+        config: Configuration dictionary.
+        env_path: Path to .env file.
+
+    Returns:
+        Status message.
+    """
+    if env_path is None:
+        # Try common locations
+        for path in [Path(".env"), Path("/app/.env"), Path.home() / ".rag_service.env"]:
+            if path.parent.exists():
+                env_path = path
+                break
+        if env_path is None:
+            env_path = Path(".env")
+
+    try:
+        # Read existing .env content
+        existing_vars = {}
+        if env_path.exists():
+            with open(env_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
+                        existing_vars[key.strip()] = value.strip()
+
+        # Update with new config (convert to env var format)
+        env_mapping = {
+            "embedding_model": "EMBEDDING_MODEL",
+            "device": "DEVICE",
+            "vector_store_backend": "VECTOR_STORE_BACKEND",
+            "chunk_size": "CHUNK_SIZE",
+            "chunk_overlap": "CHUNK_OVERLAP",
+            "enable_graph_rag": "ENABLE_GRAPH_RAG",
+            "graph_store_backend": "GRAPH_STORE_BACKEND",
+            "router_mode": "ROUTER_MODE",
+            "entity_extraction_mode": "ENTITY_EXTRACTION_MODE",
+            "log_level": "LOG_LEVEL",
+        }
+
+        for key, env_key in env_mapping.items():
+            if key in config:
+                value = config[key]
+                # Convert booleans to lowercase strings
+                if isinstance(value, bool):
+                    value = str(value).lower()
+                existing_vars[env_key] = str(value)
+
+        # Write back to .env
+        with open(env_path, "w") as f:
+            f.write("# RAG Service Configuration\n")
+            f.write("# Generated by UI\n\n")
+            for key, value in sorted(existing_vars.items()):
+                f.write(f"{key}={value}\n")
+
+        return f"✅ Configuration saved to {env_path}\n⚠️ Restart service to apply changes"
+
+    except PermissionError:
+        return f"❌ Permission denied: Cannot write to {env_path}"
+    except Exception as e:
+        return f"❌ Error saving config: {e}"
+
+
+def apply_config_runtime(config: dict[str, Any]) -> str:
+    """Apply configuration changes at runtime (where possible).
+
+    Note: Some settings require restart to take effect.
+
+    Args:
+        config: Configuration dictionary.
+
+    Returns:
+        Status message.
+    """
+    runtime_applied = []
+    restart_required = []
+
+    try:
+        # Set environment variables (affects new service instances)
+        env_mapping = {
+            "embedding_model": "EMBEDDING_MODEL",
+            "device": "DEVICE",
+            "vector_store_backend": "VECTOR_STORE_BACKEND",
+            "chunk_size": "CHUNK_SIZE",
+            "chunk_overlap": "CHUNK_OVERLAP",
+            "enable_graph_rag": "ENABLE_GRAPH_RAG",
+            "graph_store_backend": "GRAPH_STORE_BACKEND",
+            "router_mode": "ROUTER_MODE",
+            "entity_extraction_mode": "ENTITY_EXTRACTION_MODE",
+            "log_level": "LOG_LEVEL",
+        }
+
+        for key, env_key in env_mapping.items():
+            if key in config:
+                value = config[key]
+                if isinstance(value, bool):
+                    value = str(value).lower()
+                os.environ[env_key] = str(value)
+
+        # Apply log level immediately
+        if "log_level" in config:
+            import logging
+
+            logging.getLogger().setLevel(getattr(logging, config["log_level"]))
+            runtime_applied.append("log_level")
+
+        # Mark settings that need restart
+        restart_required = [
+            "embedding_model",
+            "device",
+            "vector_store_backend",
+            "graph_store_backend",
+        ]
+
+        result_parts = ["✅ Environment variables updated"]
+        if runtime_applied:
+            result_parts.append(f"🔄 Applied immediately: {', '.join(runtime_applied)}")
+        result_parts.append(f"⚠️ Restart required for: {', '.join(restart_required)}")
+
+        return "\n".join(result_parts)
+
+    except Exception as e:
+        return f"❌ Error applying config: {e}"
+
+
+def get_config_display() -> tuple:
+    """Get current config values for UI display.
+
+    Returns:
+        Tuple of config values in order matching UI components.
+    """
+    config = load_current_config()
+    return (
+        config.get("embedding_model", "sentence-transformers/all-MiniLM-L6-v2"),
+        config.get("device", "auto"),
+        config.get("vector_store_backend", "faiss"),
+        config.get("chunk_size", 512),
+        config.get("chunk_overlap", 50),
+        config.get("enable_graph_rag", False),
+        config.get("graph_store_backend", "memory"),
+        config.get("router_mode", "pattern"),
+        config.get("entity_extraction_mode", "rule_based"),
+        config.get("log_level", "INFO"),
+    )
 
 
 def ingest_files(
@@ -542,7 +785,140 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                     outputs=[collections_display],
                 )
 
-            # Tab 4: System Info
+            # Tab 4: Configuration
+            with gr.Tab("⚙️ Configuration"):
+                gr.Markdown("### Edit Service Configuration")
+                gr.Markdown("*Changes to embedding model, device, and stores require restart*")
+
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("#### Embedding & Processing")
+                        cfg_embedding_model = gr.Dropdown(
+                            choices=CONFIG_SCHEMA["embedding_model"]["choices"],
+                            label="Embedding Model",
+                            info="Choose based on your VRAM",
+                            allow_custom_value=True,
+                        )
+                        cfg_device = gr.Dropdown(
+                            choices=CONFIG_SCHEMA["device"]["choices"],
+                            label="Device",
+                            info="auto detects best available",
+                        )
+                        cfg_chunk_size = gr.Slider(
+                            minimum=100,
+                            maximum=4096,
+                            step=50,
+                            label="Chunk Size",
+                            info="Characters per chunk",
+                        )
+                        cfg_chunk_overlap = gr.Slider(
+                            minimum=0,
+                            maximum=500,
+                            step=10,
+                            label="Chunk Overlap",
+                            info="Overlap between chunks",
+                        )
+
+                    with gr.Column():
+                        gr.Markdown("#### Storage & GraphRAG")
+                        cfg_vector_store = gr.Dropdown(
+                            choices=CONFIG_SCHEMA["vector_store_backend"]["choices"],
+                            label="Vector Store Backend",
+                        )
+                        cfg_enable_graph = gr.Checkbox(
+                            label="Enable GraphRAG",
+                            info="Knowledge graph features",
+                        )
+                        cfg_graph_store = gr.Dropdown(
+                            choices=CONFIG_SCHEMA["graph_store_backend"]["choices"],
+                            label="Graph Store Backend",
+                        )
+                        cfg_router_mode = gr.Dropdown(
+                            choices=CONFIG_SCHEMA["router_mode"]["choices"],
+                            label="Query Router Mode",
+                        )
+                        cfg_entity_mode = gr.Dropdown(
+                            choices=CONFIG_SCHEMA["entity_extraction_mode"]["choices"],
+                            label="Entity Extraction Mode",
+                        )
+                        cfg_log_level = gr.Dropdown(
+                            choices=CONFIG_SCHEMA["log_level"]["choices"],
+                            label="Log Level",
+                        )
+
+                with gr.Row():
+                    load_config_btn = gr.Button("🔄 Load Current Config", size="sm")
+                    apply_runtime_btn = gr.Button("⚡ Apply (Runtime)", variant="secondary")
+                    save_env_btn = gr.Button("💾 Save to .env", variant="primary")
+
+                config_status = gr.Textbox(
+                    label="Status",
+                    lines=3,
+                    interactive=False,
+                )
+
+                # Config components list for easy reference
+                config_components = [
+                    cfg_embedding_model,
+                    cfg_device,
+                    cfg_vector_store,
+                    cfg_chunk_size,
+                    cfg_chunk_overlap,
+                    cfg_enable_graph,
+                    cfg_graph_store,
+                    cfg_router_mode,
+                    cfg_entity_mode,
+                    cfg_log_level,
+                ]
+
+                def collect_config(*values):
+                    """Collect config values into a dictionary."""
+                    keys = [
+                        "embedding_model",
+                        "device",
+                        "vector_store_backend",
+                        "chunk_size",
+                        "chunk_overlap",
+                        "enable_graph_rag",
+                        "graph_store_backend",
+                        "router_mode",
+                        "entity_extraction_mode",
+                        "log_level",
+                    ]
+                    return dict(zip(keys, values))
+
+                def apply_and_report(*values):
+                    config = collect_config(*values)
+                    return apply_config_runtime(config)
+
+                def save_and_report(*values):
+                    config = collect_config(*values)
+                    return save_config_to_env(config)
+
+                load_config_btn.click(
+                    fn=get_config_display,
+                    inputs=[],
+                    outputs=config_components,
+                )
+                apply_runtime_btn.click(
+                    fn=apply_and_report,
+                    inputs=config_components,
+                    outputs=[config_status],
+                )
+                save_env_btn.click(
+                    fn=save_and_report,
+                    inputs=config_components,
+                    outputs=[config_status],
+                )
+
+                # Load config on tab initialization
+                app.load(
+                    fn=get_config_display,
+                    inputs=[],
+                    outputs=config_components,
+                )
+
+            # Tab 5: System Info
             with gr.Tab("ℹ️ System"):
                 system_info = gr.JSON(label="System Information")
                 refresh_sys_btn = gr.Button("🔄 Refresh")
@@ -561,9 +937,9 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
             """
             ---
             💡 **Tips:**
-            - Start the API first: `python -m rag_service`
             - Use **auto** strategy for smart routing between vector and graph search
             - Larger **top_k** values provide more context but increase token usage
+            - Configuration changes to embedding model/device require service restart
             """
         )
 

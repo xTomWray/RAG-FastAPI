@@ -33,24 +33,23 @@ router = APIRouter(tags=["ingest"])
 def _build_knowledge_graph(
     documents: list,
     collection: str,
-    settings,
 ) -> dict[str, int]:
     """Extract entities and relationships from documents and add to graph store.
 
     Args:
         documents: List of processed documents.
         collection: Collection name.
-        settings: Application settings.
 
     Returns:
         Dictionary with entity and relationship counts.
     """
+    settings = get_settings()
     if not settings.enable_graph_rag:
         return {"entities": 0, "relationships": 0}
 
     try:
-        extractor = get_entity_extractor(settings)
-        graph_store = get_graph_store(settings)
+        extractor = get_entity_extractor()
+        graph_store = get_graph_store()
 
         all_entities = []
         all_relationships = []
@@ -120,9 +119,9 @@ async def ingest_file(request: FileIngestRequest) -> IngestResponse:
 
     try:
         # Get services
-        chunker = get_chunker(settings)
-        embedding_service = get_embedding_service(settings)
-        vector_store = get_vector_store(settings)
+        chunker = get_chunker()
+        embedding_service = get_embedding_service()
+        vector_store = get_vector_store()
 
         # Process the file
         file_path = Path(request.path)
@@ -152,7 +151,7 @@ async def ingest_file(request: FileIngestRequest) -> IngestResponse:
         vector_store.persist()
 
         # Build knowledge graph (if enabled)
-        graph_stats = _build_knowledge_graph(documents, request.collection, settings)
+        graph_stats = _build_knowledge_graph(documents, request.collection)
 
         return IngestResponse(
             status=IngestStatus.SUCCESS,
@@ -192,9 +191,9 @@ async def ingest_directory(request: DirectoryIngestRequest) -> IngestResponse:
 
     try:
         # Get services
-        chunker = get_chunker(settings)
-        embedding_service = get_embedding_service(settings)
-        vector_store = get_vector_store(settings)
+        chunker = get_chunker()
+        embedding_service = get_embedding_service()
+        vector_store = get_vector_store()
 
         # Process the directory
         dir_path = Path(request.path)
@@ -230,7 +229,7 @@ async def ingest_directory(request: DirectoryIngestRequest) -> IngestResponse:
         vector_store.persist()
 
         # Build knowledge graph (if enabled)
-        graph_stats = _build_knowledge_graph(documents, request.collection, settings)
+        graph_stats = _build_knowledge_graph(documents, request.collection)
 
         return IngestResponse(
             status=IngestStatus.SUCCESS,
@@ -255,7 +254,7 @@ async def list_collections() -> dict[str, Any]:
     settings = get_settings()
 
     try:
-        vector_store = get_vector_store(settings)
+        vector_store = get_vector_store()
         vector_collections = vector_store.list_collections()
 
         collection_info = []
@@ -274,7 +273,7 @@ async def list_collections() -> dict[str, Any]:
         # Add graph store info if enabled
         if settings.enable_graph_rag:
             try:
-                graph_store = get_graph_store(settings)
+                graph_store = get_graph_store()
                 graph_collections = graph_store.list_collections()
 
                 graph_info = []
@@ -314,7 +313,7 @@ async def delete_collection(collection_name: str) -> dict[str, str]:
 
     try:
         # Delete from vector store
-        vector_store = get_vector_store(settings)
+        vector_store = get_vector_store()
         try:
             vector_store.delete_collection(collection_name)
             vector_store.persist()
@@ -325,7 +324,7 @@ async def delete_collection(collection_name: str) -> dict[str, str]:
         # Delete from graph store if enabled
         if settings.enable_graph_rag:
             try:
-                graph_store = get_graph_store(settings)
+                graph_store = get_graph_store()
                 graph_store.delete_collection(collection_name)
                 deleted.append("graph")
             except Exception:
@@ -362,7 +361,7 @@ async def get_graph_stats(collection_name: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="GraphRAG is not enabled")
 
     try:
-        graph_store = get_graph_store(settings)
+        graph_store = get_graph_store()
         stats = graph_store.get_collection_stats(collection_name)
         return {"collection": collection_name, **stats}
 
