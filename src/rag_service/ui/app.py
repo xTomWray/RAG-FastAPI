@@ -616,6 +616,28 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
         css="""
         .gradio-container { max-width: 1200px !important; }
         .status-box { font-family: monospace; }
+        
+        /* Hide info text by default - hover tooltips */
+        .config-field .info {
+            opacity: 0;
+            max-height: 0;
+            overflow: hidden;
+            transition: all 0.2s ease;
+            font-size: 0.75rem;
+            background: var(--neutral-100);
+            border-radius: 4px;
+            padding: 0;
+            margin-top: 0;
+        }
+        .config-field:hover .info {
+            opacity: 1;
+            max-height: 100px;
+            padding: 6px 8px;
+            margin-top: 4px;
+        }
+        .config-field .label-wrap span {
+            cursor: help;
+        }
         """,
     ) as app:
         gr.Markdown(
@@ -799,12 +821,14 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                             label="Embedding Model ⓘ",
                             info=CONFIG_SCHEMA["embedding_model"]["tooltip"],
                             allow_custom_value=True,
+                            elem_classes=["config-field"],
                         )
                         cfg_device = gr.Dropdown(
                             choices=CONFIG_SCHEMA["device"]["choices"],
                             value=initial_config.get("device", "auto"),
                             label="Device ⓘ",
                             info=CONFIG_SCHEMA["device"]["tooltip"],
+                            elem_classes=["config-field"],
                         )
                         with gr.Row():
                             cfg_chunk_size = gr.Slider(
@@ -814,6 +838,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                                 step=50,
                                 label="Chunk Size ⓘ",
                                 info=CONFIG_SCHEMA["chunk_size"]["tooltip"],
+                                elem_classes=["config-field"],
                             )
                             cfg_chunk_overlap = gr.Slider(
                                 minimum=0,
@@ -822,6 +847,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                                 step=10,
                                 label="Overlap ⓘ",
                                 info=CONFIG_SCHEMA["chunk_overlap"]["tooltip"],
+                                elem_classes=["config-field"],
                             )
 
                     with gr.Column():
@@ -831,11 +857,13 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                             value=initial_config.get("vector_store_backend", "faiss"),
                             label="Vector Store ⓘ",
                             info=CONFIG_SCHEMA["vector_store_backend"]["tooltip"],
+                            elem_classes=["config-field"],
                         )
                         cfg_enable_graph = gr.Checkbox(
                             value=initial_config.get("enable_graph_rag", False),
                             label="Enable GraphRAG ⓘ",
                             info=CONFIG_SCHEMA["enable_graph_rag"]["tooltip"],
+                            elem_classes=["config-field"],
                         )
                         with gr.Row():
                             cfg_graph_store = gr.Dropdown(
@@ -843,12 +871,14 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                                 value=initial_config.get("graph_store_backend", "memory"),
                                 label="Graph Store ⓘ",
                                 info=CONFIG_SCHEMA["graph_store_backend"]["tooltip"],
+                                elem_classes=["config-field"],
                             )
                             cfg_router_mode = gr.Dropdown(
                                 choices=CONFIG_SCHEMA["router_mode"]["choices"],
                                 value=initial_config.get("router_mode", "pattern"),
                                 label="Router ⓘ",
                                 info=CONFIG_SCHEMA["router_mode"]["tooltip"],
+                                elem_classes=["config-field"],
                             )
                         with gr.Row():
                             cfg_entity_mode = gr.Dropdown(
@@ -856,12 +886,14 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                                 value=initial_config.get("entity_extraction_mode", "rule_based"),
                                 label="Extraction ⓘ",
                                 info=CONFIG_SCHEMA["entity_extraction_mode"]["tooltip"],
+                                elem_classes=["config-field"],
                             )
                             cfg_log_level = gr.Dropdown(
                                 choices=CONFIG_SCHEMA["log_level"]["choices"],
                                 value=initial_config.get("log_level", "INFO"),
                                 label="Log Level ⓘ",
                                 info=CONFIG_SCHEMA["log_level"]["tooltip"],
+                                elem_classes=["config-field"],
                             )
 
                 with gr.Row():
