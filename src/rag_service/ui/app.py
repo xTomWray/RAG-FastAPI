@@ -812,23 +812,29 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                 gr.Markdown("### Edit Service Configuration")
                 gr.Markdown("*Changes to embedding model, device, and stores require restart*")
 
+                # Get initial config values
+                initial_config = load_current_config()
+
                 with gr.Row():
                     with gr.Column():
                         gr.Markdown("#### Embedding & Processing")
                         cfg_embedding_model = gr.Dropdown(
                             choices=CONFIG_SCHEMA["embedding_model"]["choices"],
+                            value=initial_config.get("embedding_model", "sentence-transformers/all-MiniLM-L6-v2"),
                             label="Embedding Model",
                             info="Choose based on your VRAM",
                             allow_custom_value=True,
                         )
                         cfg_device = gr.Dropdown(
                             choices=CONFIG_SCHEMA["device"]["choices"],
+                            value=initial_config.get("device", "auto"),
                             label="Device",
                             info="auto detects best available",
                         )
                         cfg_chunk_size = gr.Slider(
                             minimum=100,
                             maximum=4096,
+                            value=initial_config.get("chunk_size", 512),
                             step=50,
                             label="Chunk Size",
                             info="Characters per chunk",
@@ -836,6 +842,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                         cfg_chunk_overlap = gr.Slider(
                             minimum=0,
                             maximum=500,
+                            value=initial_config.get("chunk_overlap", 50),
                             step=10,
                             label="Chunk Overlap",
                             info="Overlap between chunks",
@@ -845,47 +852,53 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                         gr.Markdown("#### Storage & GraphRAG")
                         cfg_vector_store = gr.Dropdown(
                             choices=CONFIG_SCHEMA["vector_store_backend"]["choices"],
+                            value=initial_config.get("vector_store_backend", "faiss"),
                             label="Vector Store Backend",
                         )
                         cfg_enable_graph = gr.Checkbox(
+                            value=initial_config.get("enable_graph_rag", False),
                             label="Enable GraphRAG",
                             info="Knowledge graph features",
                         )
                         cfg_graph_store = gr.Dropdown(
                             choices=CONFIG_SCHEMA["graph_store_backend"]["choices"],
+                            value=initial_config.get("graph_store_backend", "memory"),
                             label="Graph Store Backend",
                         )
                         cfg_router_mode = gr.Dropdown(
                             choices=CONFIG_SCHEMA["router_mode"]["choices"],
+                            value=initial_config.get("router_mode", "pattern"),
                             label="Query Router Mode",
                         )
                         cfg_entity_mode = gr.Dropdown(
                             choices=CONFIG_SCHEMA["entity_extraction_mode"]["choices"],
+                            value=initial_config.get("entity_extraction_mode", "rule_based"),
                             label="Entity Extraction Mode",
                         )
                         cfg_log_level = gr.Dropdown(
                             choices=CONFIG_SCHEMA["log_level"]["choices"],
+                            value=initial_config.get("log_level", "INFO"),
                             label="Log Level",
                         )
 
                 gr.Markdown("---")
 
                 with gr.Row():
-                    load_config_btn = gr.Button("🔄 Load Current", size="sm")
-                    save_env_btn = gr.Button("💾 Save Only", variant="secondary")
-                    apply_restart_btn = gr.Button(
-                        "🔄 Apply & Restart",
-                        variant="primary",
-                    )
-
-                gr.Markdown(
-                    "*💡 'Apply & Restart' saves config and restarts the service. "
-                    "Page will reconnect automatically (~30-60 sec).*"
-                )
+                    with gr.Column(scale=1):
+                        load_config_btn = gr.Button("🔄 Load Configuration", variant="secondary")
+                        save_env_btn = gr.Button("💾 Save Configuration", variant="secondary")
+                    with gr.Column(scale=2):
+                        apply_restart_btn = gr.Button(
+                            "🔄 Apply & Restart Service",
+                            variant="primary",
+                        )
+                        gr.Markdown(
+                            "*Saves config and restarts service (~30-60 sec)*"
+                        )
 
                 config_status = gr.Textbox(
                     label="Status",
-                    lines=4,
+                    lines=3,
                     interactive=False,
                 )
 
@@ -941,13 +954,6 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                     fn=apply_restart_and_report,
                     inputs=config_components,
                     outputs=[config_status],
-                )
-
-                # Load config on tab initialization
-                app.load(
-                    fn=get_config_display,
-                    inputs=[],
-                    outputs=config_components,
                 )
 
             # Tab 5: System Info
