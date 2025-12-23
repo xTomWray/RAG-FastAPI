@@ -191,7 +191,8 @@ def check_api_health(api_url: str) -> tuple[bool, str]:
             return True, "✅ API is running"
         return False, f"⚠️ API returned status {response.status_code}"
     except httpx.ConnectError:
-        return False, "❌ Cannot connect to API. Start it with: python -m rag_service"
+        return False, "❌ Cannot connect to API. Start it with: 
+    python -m rag_service"
     except Exception as e:
         return False, f"❌ Error: {str(e)}"
 
@@ -926,136 +927,6 @@ def delete_collection(collection: str, api_url: str) -> str:
         return f"❌ Error: {str(e)}"
 
 
-def get_service_stats(api_url: str) -> tuple[str, str, dict]:
-    """Get service statistics from the API.
-
-    Args:
-        api_url: Base URL of the RAG API service.
-
-    Returns:
-        Tuple of (formatted_markdown, status_message, raw_data).
-    """
-    try:
-        response = httpx.get(f"{api_url}/api/v1/stats", timeout=10.0)
-        if response.status_code == 200:
-            data = response.json()
-
-            # Format as readable markdown
-            lines = []
-
-            # Service status
-            service = data.get("service", {})
-            health = data.get("health", {})
-            lines.append("## 📊 Service Status")
-            lines.append("")
-            lines.append(f"| Metric | Value |")
-            lines.append(f"|:-------|:------|")
-            lines.append(f"| **Uptime** | {service.get('uptime', 'N/A')} |")
-            lines.append(f"| **Health** | {health.get('status', 'unknown').upper()} ({health.get('score', 0)}%) |")
-            lines.append(f"| **Total Operations** | {health.get('total_operations', 0):,} |")
-            lines.append(f"| **Errors** | {health.get('total_errors', 0)} |")
-
-            # GPU info
-            gpu = data.get("gpu", {})
-            if gpu.get("available"):
-                lines.append("")
-                lines.append("## 🎮 GPU")
-                lines.append("")
-                lines.append(f"| Metric | Value |")
-                lines.append(f"|:-------|:------|")
-                lines.append(f"| **Device** | {gpu.get('device_name', 'Unknown')} |")
-                mem_pct = gpu.get('memory_percent', 0)
-                lines.append(f"| **Memory** | {gpu.get('memory_allocated_gb', 0):.1f} / {gpu.get('memory_total_gb', 0):.1f} GB ({mem_pct:.0f}%) |")
-                if "temperature_c" in gpu:
-                    lines.append(f"| **Temperature** | {gpu['temperature_c']:.0f}°C |")
-                if "power_draw_watts" in gpu:
-                    lines.append(f"| **Power** | {gpu['power_draw_watts']:.0f}W / {gpu.get('power_limit_watts', 'N/A')}W |")
-                if "utilization_percent" in gpu:
-                    lines.append(f"| **Utilization** | {gpu['utilization_percent']:.0f}% |")
-
-            # Embeddings
-            ops = data.get("operations", {})
-            emb = ops.get("embeddings", {})
-            if emb.get("count", 0) > 0:
-                lines.append("")
-                lines.append("## 🧠 Embeddings")
-                lines.append("")
-                lines.append(f"| Metric | Value |")
-                lines.append(f"|:-------|:------|")
-                lines.append(f"| **Operations** | {emb.get('count', 0):,} |")
-                lines.append(f"| **Texts Embedded** | {emb.get('total_texts', 0):,} |")
-                lines.append(f"| **Throughput** | {emb.get('texts_per_second', 0):.1f} texts/sec |")
-                lines.append(f"| **Avg Latency** | {emb.get('avg_duration_ms', 0):.1f}ms |")
-                lines.append(f"| **P95 Latency** | {emb.get('p95_duration_ms', 0):.1f}ms |")
-                lines.append(f"| **Success Rate** | {emb.get('success_rate', 100):.1f}% |")
-
-            # Searches
-            search = ops.get("searches", {})
-            if search.get("count", 0) > 0:
-                lines.append("")
-                lines.append("## 🔍 Searches")
-                lines.append("")
-                lines.append(f"| Metric | Value |")
-                lines.append(f"|:-------|:------|")
-                lines.append(f"| **Total Queries** | {search.get('total_queries', 0):,} |")
-                lines.append(f"| **Avg Results** | {search.get('avg_results_per_query', 0):.1f} |")
-                lines.append(f"| **Avg Latency** | {search.get('avg_duration_ms', 0):.1f}ms |")
-                lines.append(f"| **P95 Latency** | {search.get('p95_duration_ms', 0):.1f}ms |")
-                strategy_counts = search.get("strategy_counts", {})
-                if strategy_counts:
-                    strategies = ", ".join(f"{k}={v}" for k, v in strategy_counts.items())
-                    lines.append(f"| **Strategies** | {strategies} |")
-
-            # Ingestions
-            ingest = ops.get("ingestions", {})
-            if ingest.get("count", 0) > 0:
-                lines.append("")
-                lines.append("## 📥 Ingestions")
-                lines.append("")
-                lines.append(f"| Metric | Value |")
-                lines.append(f"|:-------|:------|")
-                lines.append(f"| **Documents** | {ingest.get('total_documents', 0):,} |")
-                lines.append(f"| **Chunks Created** | {ingest.get('total_chunks', 0):,} |")
-                lines.append(f"| **Data Processed** | {ingest.get('total_mb', 0):.1f} MB |")
-                lines.append(f"| **Avg Chunks/Doc** | {ingest.get('avg_chunks_per_doc', 0):.1f} |")
-
-            # Recent errors
-            errors = data.get("recent_errors", [])
-            if errors:
-                lines.append("")
-                lines.append("## ⚠️ Recent Errors")
-                lines.append("")
-                for err in errors[-5:]:
-                    lines.append(f"- **{err.get('type', 'Error')}**: {err.get('message', 'Unknown')[:100]}")
-
-            return "\n".join(lines), "✅ Stats loaded", data
-        else:
-            return "❌ Failed to fetch stats", f"Error: HTTP {response.status_code}", {}
-    except httpx.ConnectError:
-        return "❌ Cannot connect to API. Is the service running?", "Connection failed", {}
-    except Exception as e:
-        return f"❌ Error: {str(e)}", str(e), {}
-
-
-def reset_service_stats(api_url: str) -> str:
-    """Reset service statistics.
-
-    Args:
-        api_url: Base URL of the RAG API service.
-
-    Returns:
-        Status message.
-    """
-    try:
-        response = httpx.post(f"{api_url}/api/v1/stats/reset", timeout=5.0)
-        if response.status_code == 200:
-            return "✅ Statistics reset successfully"
-        else:
-            return f"❌ Failed to reset stats: HTTP {response.status_code}"
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-
 def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
     """Create the Gradio interface.
 
@@ -1677,64 +1548,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                     outputs=[config_status],
                 )
 
-            # Tab 5: Stats
-            with gr.Tab("📈 Stats") as stats_tab:
-                gr.Markdown("*Runtime statistics and performance metrics. Click Refresh to load current data.*")
-
-                with gr.Row():
-                    with gr.Column(scale=2):
-                        stats_display = gr.Markdown(
-                            value="## 📊 Service Statistics\n\n*Click 'Load Stats' to view runtime metrics*"
-                        )
-
-                    with gr.Column(scale=1):
-                        stats_raw = gr.JSON(
-                            label="Raw Data",
-                            value={},
-                        )
-
-                with gr.Row():
-                    load_stats_btn = gr.Button("📈 Load Stats", variant="primary", size="sm")
-                    refresh_stats_btn = gr.Button("🔄 Refresh", size="sm")
-                    reset_stats_btn = gr.Button("🗑️ Reset Stats", variant="stop", size="sm")
-
-                stats_status = gr.Textbox(label="Status", interactive=False, lines=1)
-
-                def load_stats_handler(api_url):
-                    """Load stats and return all three outputs."""
-                    md, status, raw = get_service_stats(api_url)
-                    return md, status, raw
-
-                def reset_and_reload_handler(api_url):
-                    """Reset stats and reload."""
-                    reset_msg = reset_service_stats(api_url)
-                    md, _, raw = get_service_stats(api_url)
-                    return md, reset_msg, raw
-
-                load_stats_btn.click(
-                    fn=load_stats_handler,
-                    inputs=[api_url_input],
-                    outputs=[stats_display, stats_status, stats_raw],
-                )
-                refresh_stats_btn.click(
-                    fn=load_stats_handler,
-                    inputs=[api_url_input],
-                    outputs=[stats_display, stats_status, stats_raw],
-                )
-                reset_stats_btn.click(
-                    fn=reset_and_reload_handler,
-                    inputs=[api_url_input],
-                    outputs=[stats_display, stats_status, stats_raw],
-                )
-
-                # Auto-load stats when tab is selected
-                stats_tab.select(
-                    fn=load_stats_handler,
-                    inputs=[api_url_input],
-                    outputs=[stats_display, stats_status, stats_raw],
-                )
-
-            # Tab 6: System Info
+            # Tab 5: System Info
             with gr.Tab("ℹ️ System"):
                 gr.Markdown("*Click 'Load System Info' to see current system status*")
                 system_info = gr.JSON(label="System Information", value={"status": "Click 'Load System Info' to refresh"})
