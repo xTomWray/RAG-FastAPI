@@ -156,11 +156,13 @@ def typecheck() -> None:
     """Run type checker (mypy) on the codebase.
 
     Performs static type analysis to catch type-related bugs.
+    Matches CI configuration exactly.
     """
     print_info("Running type checker...")
     console.print()
 
-    args = [sys.executable, "-m", "mypy", "src/rag_service"]
+    # Match CI exactly: mypy src/ --ignore-missing-imports
+    args = [sys.executable, "-m", "mypy", "src/", "--ignore-missing-imports"]
     exit_code = _run_command(args)
 
     if exit_code == 0:
@@ -193,9 +195,14 @@ def check() -> None:
         all_passed = False
     console.print()
 
-    # Type check
+    # Type check (match CI: mypy src/ --ignore-missing-imports)
     console.print("[bold]3. Type check...[/bold]")
-    if _run_command([sys.executable, "-m", "mypy", "src/rag_service"], check=False) != 0:
+    if (
+        _run_command(
+            [sys.executable, "-m", "mypy", "src/", "--ignore-missing-imports"], check=False
+        )
+        != 0
+    ):
         all_passed = False
     console.print()
 
