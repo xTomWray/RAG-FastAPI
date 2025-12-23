@@ -1,0 +1,55 @@
+# RAG Documentation Service Configuration
+# ==========================================
+# This file contains user-editable settings for the RAG service.
+# Settings here can be overridden by environment variables or .env file.
+#
+# Priority (highest to lowest):
+#   1. Environment variables (e.g., EMBEDDING_MODEL=...)
+#   2. .env file
+#   3. This config.yaml file
+#   4. Default values
+#
+# To use environment variables, convert setting names to UPPER_SNAKE_CASE:
+#   embedding_model -> EMBEDDING_MODEL
+#   chunk_size -> CHUNK_SIZE
+#
+
+embedding_model: BAAI/bge-large-en-v1.5
+device: cuda
+embedding_batch_size: 1024
+enable_gpu_safeguards: true
+gpu_max_memory_percent: 90.0
+gpu_max_temperature_c: 80.0
+gpu_inter_batch_delay: 0.1
+gpu_adaptive_batch_size: true
+gpu_min_batch_size: 8
+gpu_power_limit_watts: 400
+enable_gpu_warmup: true
+precision: auto
+enable_tf32: true
+enable_cudnn_benchmark: true
+vector_store_backend: chroma
+faiss_index_dir: data\index
+chroma_persist_dir: data\chroma
+default_collection: test1
+chunk_size: 1024
+chunk_overlap: 55
+pdf_strategy: fast
+host: 0.0.0.0
+port: 8080
+cors_origins:
+- http://localhost:3000
+- http://localhost:8080
+api_prefix: /api/v1
+log_level: INFO
+graph_store_backend: memory
+neo4j_uri: bolt://localhost:7687
+neo4j_user: neo4j
+neo4j_database: neo4j
+router_mode: pattern
+default_query_strategy: vector
+default_top_k: 5
+entity_extraction_mode: rule_based
+entity_extraction_domain: general
+ollama_model: llama3.2
+enable_graph_rag: false

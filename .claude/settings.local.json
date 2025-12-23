@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:google.github.io)",
+      "Bash(./rag_venv/Scripts/python.exe -m rag_service start:*)",
+      "Bash(./rag_venv/Scripts/python.exe -m pip:*)",
+      "Bash(./rag_venv/Scripts/python.exe:*)",
+      "Bash(cat:*)",
+      "Bash(make:*)",
+      "Bash(PYTHONPATH=src ./rag_venv/Scripts/python.exe:*)",
+      "Bash(./rag_venv/Scripts/pip.exe:*)"
+    ]
+  },
+  "outputStyle": "Explanatory"
+}
