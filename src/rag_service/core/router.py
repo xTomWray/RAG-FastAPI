@@ -23,11 +23,12 @@ class QueryRouter:
     RELATIONAL_PATTERNS = [
         # Transition/flow patterns
         r"what.*(?:follow|precede|trigger|cause|lead|come after|come before)",
-        r"(?:transition|path|route|flow).*(?:from|to|between)",
+        r"(?:transition|path|route|flow|goes|go|changes?|moves?).*(?:from|to|between)",
         r"(?:after|before|following|preceding).*(?:state|step|stage|phase)",
         # Relationship patterns
         r"(?:connect|relate|link|associate).*(?:to|with|between)",
-        r"(?:depend|require|need).*(?:on|for|by)",
+        r"(?:depend|require|need|needs?).*(?:on|for|by)",
+        r"what.*(?:require|need|depend).*[?]",  # "What requires X?" pattern
         r"(?:how|what).*(?:related|connected|linked)",
         # Graph traversal patterns
         r"(?:all|list|show).*(?:that|which).*(?:lead|go|connect)",
@@ -36,6 +37,9 @@ class QueryRouter:
         # Specific entity relationship queries
         r"what.*(?:can|could|might|will).*(?:happen|occur|result)",
         r"(?:which|what).*(?:states?|commands?|messages?).*(?:trigger|cause|follow)",
+        # Additional patterns for common queries
+        r".*(?:changes?|moves?|transitions?).*to.*",  # "changes to FLYING"
+        r".*(?:needs?|requires?).*",  # "ARM needs PREFLIGHT"
     ]
 
     # Patterns that indicate semantic/vector queries

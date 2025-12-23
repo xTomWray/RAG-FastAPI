@@ -2,24 +2,13 @@
 
 A cross-platform, open-source RAG (Retrieval-Augmented Generation) API service for document retrieval and question answering. Built with FastAPI, FAISS/ChromaDB, and sentence-transformers.
 
-## Features
-
-- **100% Open Source** - No API costs, runs entirely on your hardware
-- **Cross-Platform** - Works on Windows, Linux, and macOS
-- **GPU Accelerated** - CUDA (Windows/Linux) and MPS (Apple Silicon) support
-- **Multiple File Formats** - PDF, Markdown, TXT, XML, HTML, DOCX, and code files
-- **Configurable Models** - Choose embedding models based on your available VRAM
-- **Dual Vector Stores** - FAISS (fastest) or ChromaDB (simpler)
-- **GraphRAG Hybrid Search** - Combines vector similarity with knowledge graphs
-- **Web UI** - Drag-and-drop Gradio interface with smart port detection
-- **Production Ready** - Docker support, health checks, API versioning
-
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.10+
 - pip
+- (Optional) NVIDIA GPU with CUDA 12.1+ for GPU acceleration
 
 ### Installation
 
@@ -28,24 +17,66 @@ A cross-platform, open-source RAG (Retrieval-Augmented Generation) API service f
 git clone https://github.com/youruser/rag-documentation-service.git
 cd rag-documentation-service
 
-# Install dependencies
-pip install -e .
+# Create and activate a virtual environment (recommended)
+python -m venv venv
 
-# Or with development tools
+# On Windows:
+venv\Scripts\activate
+
+# On Linux/macOS:
+source venv/bin/activate
+```
+
+#### CPU Installation (Default)
+```bash
+pip install -r requirements.txt
+```
+
+#### GPU/CUDA Installation (Recommended for faster embeddings)
+```bash
+# Windows/Linux with NVIDIA GPU (CUDA 12.1)
+pip install -r requirements-cuda.txt
+
+# This installs PyTorch with CUDA support automatically
+```
+
+#### Alternative: Manual CUDA Installation
+```bash
+# First install PyTorch with CUDA
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+
+# Then install other dependencies
+pip install -r requirements.txt
+```
+
+#### Editable Install (for development)
+```bash
 pip install -e ".[dev]"
 ```
+
+> **Note:** Using a virtual environment is strongly recommended to avoid dependency conflicts with other Python projects.
 
 ### Run the Service
 
 ```bash
 # Development mode with hot reload
-uvicorn rag_service.main:app --reload
+rag-service start --reload
 
-# Or using the module
-python -m rag_service
+# Production mode with 4 workers
+rag-service start --workers 4
 
-# Or using make
-make run
+# API-only mode (no Gradio UI)
+rag-service start --no-ui --workers 4
+
+# Check service status
+rag-service status
+
+# Stop the service
+rag-service stop
+
+# Alternative: using make (thin wrapper)
+make run           # Same as: rag-service start --reload
+make run-prod      # Same as: rag-service start --workers 4 --no-ui
 ```
 
 The service is now available at http://localhost:8080
@@ -61,16 +92,22 @@ The Web UI is enabled by default and provides:
 - 📦 Collection management
 - ℹ️ System status monitoring
 
-### Disable the Web UI
-
-To run API-only mode without the GUI:
+### Deployment Patterns
 
 ```bash
-# Set ENABLE_GUI=false
-ENABLE_GUI=false python -m rag_service
+# All-in-One (Development)
+rag-service start --reload
 
-# Or run standalone UI separately
-python -m rag_service.ui.app --api-url http://localhost:8080
+# API-Only (Production Backend)
+rag-service start --no-ui --workers 4
+
+# Separate UI (Scaled Frontend)
+rag-service start --no-ui --port 8080  # Terminal 1
+rag-ui --api-url http://api:8080       # Terminal 2
+
+# Docker
+rag-service docker-build
+rag-service docker-run
 ```
 
 ### Basic Usage
@@ -115,10 +152,23 @@ context = "\n\n".join(chunk["text"] for chunk in results["chunks"])
 
 ## Configuration
 
-Copy `.env.example` to `.env` and customize:
+Settings can be configured via:
+1. **Web UI** - Edit settings in the Configuration tab and click "Save" or "Apply & Restart"
+2. **config.yaml** - Edit the `config.yaml` file directly (human-readable)
+3. **Environment variables** - Override any setting (highest priority)
+4. **.env file** - For secrets like passwords
 
-```bash
-cp .env.example .env
+### Using config.yaml (Recommended)
+
+The `config.yaml` file is created automatically and persists your settings between sessions:
+
+```yaml
+# config.yaml
+embedding_model: sentence-transformers/all-MiniLM-L6-v2
+device: cuda  # auto, cpu, cuda, or mps
+chunk_size: 512
+vector_store_backend: faiss
+enable_graph_rag: true
 ```
 
 ### Key Configuration Options
@@ -295,10 +345,10 @@ EMBEDDING_MODEL=nvidia/NV-Embed-v2
 pip install -e .
 
 # For GPU support (CUDA)
-pip install torch --index-url https://download.pytorch.org/whl/cu121
+rag-service install --gpu
 
 # Run
-python -m rag_service
+rag-service start --reload
 ```
 
 ### Linux
@@ -311,7 +361,7 @@ sudo apt install libmagic1 poppler-utils
 pip install -e .
 
 # Run
-python -m rag_service
+rag-service start --reload
 ```
 
 ### macOS
@@ -327,7 +377,7 @@ pip install -e .
 # PyTorch automatically detects MPS
 
 # Run
-python -m rag_service
+rag-service start --reload
 ```
 
 ### OCR Support (Optional)
@@ -374,6 +424,37 @@ docker run -d --restart unless-stopped -p 8080:8080 -e ENABLE_GUI=false -v ./dat
 docker run -d --restart unless-stopped --gpus all -p 8080:8080 -v ./data:/app/data --name rag-service rag-service
 ```
 
+### Stop and Manage Containers
+
+```bash
+# Stop the running container
+docker stop rag-service
+
+# Start a stopped container
+docker start rag-service
+
+# Stop and remove the container
+docker stop rag-service
+docker rm rag-service
+
+# View running containers
+docker ps
+
+# View all containers (including stopped)
+docker ps -a
+
+# View container logs
+docker logs rag-service
+
+# Follow container logs in real-time
+docker logs -f rag-service
+```
+
+**Note:** If you're running the service locally (outside Docker) and get a "port already in use" error, stop the Docker container first:
+```bash
+docker stop rag-service
+```
+
 Access:
 - **Web UI**: http://localhost:8080
 - **API Docs**: http://localhost:8080/docs
@@ -384,45 +465,121 @@ Access:
 docker-compose up -d
 ```
 
+## CLI Reference
+
+The `rag-service` CLI provides all commands for managing the service:
+
+### Service Commands
+
+```bash
+rag-service start [OPTIONS]     # Start the RAG service
+  --reload, -r                  # Enable hot reload (dev mode)
+  --no-ui                       # API-only mode (disable Gradio UI)
+  --host, -h TEXT               # Host to bind to
+  --port, -p INTEGER            # Port to bind to
+  --workers, -w INTEGER         # Number of uvicorn workers
+
+rag-service stop                # Stop the running service
+rag-service restart             # Restart the service
+rag-service status              # Show service status
+```
+
+### Installation Commands
+
+```bash
+rag-service install             # Install production dependencies
+rag-service install --dev       # Install dev dependencies + pre-commit hooks
+rag-service install --gpu       # Install GPU support (CUDA)
+rag-service install --all       # Install all optional dependencies
+```
+
+### Development Commands
+
+```bash
+rag-service test                # Run all tests
+rag-service test --unit         # Unit tests only
+rag-service test --integration  # Integration tests only
+rag-service test --coverage     # With coverage report
+
+rag-service lint                # Run linter (ruff)
+rag-service lint --fix          # Auto-fix linting issues
+
+rag-service format              # Format code (black + isort)
+rag-service format --check      # Check formatting only
+
+rag-service typecheck           # Run type checker (mypy)
+rag-service check               # Run all quality checks
+```
+
+### Docker Commands
+
+```bash
+rag-service docker-build        # Build Docker image
+rag-service docker-build --gpu  # Build with GPU support
+rag-service docker-run          # Run in Docker container
+rag-service docker-run --gpu    # Run with GPU support
+```
+
+### Utility Commands
+
+```bash
+rag-service clean               # Clean build artifacts
+rag-service clean --data        # Also clean data directories
+rag-service --help              # Show all commands
+```
+
 ## Development
 
 ### Setup
 
 ```bash
-# Install dev dependencies
-pip install -e ".[dev]"
+# Install dev dependencies using CLI
+rag-service install --dev
 
-# Install pre-commit hooks
-pre-commit install
+# Or using pip directly
+pip install -e ".[dev]"
 ```
 
 ### Running Tests
 
 ```bash
 # All tests
-make test
+rag-service test
 
 # Unit tests only
-make test-unit
+rag-service test --unit
 
 # With coverage
-make test-cov
+rag-service test --coverage
+
+# Makefile shortcuts (delegates to CLI)
+make test        # Same as: rag-service test
+make test-unit   # Same as: rag-service test --unit
+make test-cov    # Same as: rag-service test --coverage
 ```
 
 ### Code Quality
 
 ```bash
 # Lint
-make lint
+rag-service lint
 
-# Format
-make format
+# Auto-fix linting issues
+rag-service lint --fix
+
+# Format code
+rag-service format
 
 # Type check
-make type-check
+rag-service typecheck
 
-# All checks
-make check
+# All checks (lint + format + typecheck)
+rag-service check
+
+# Makefile shortcuts
+make lint        # Same as: rag-service lint
+make format      # Same as: rag-service format
+make check       # Same as: rag-service check
 ```
 
 ## Project Structure
@@ -430,6 +587,12 @@ make check
 ```
 rag-documentation-service/
 ├── src/rag_service/
+│   ├── cli/                 # Typer CLI commands
+│   │   ├── main.py          # Root CLI app
+│   │   ├── commands.py      # Service commands (start/stop/status)
+│   │   ├── install_commands.py  # Install command
+│   │   ├── dev_commands.py  # Test/lint/format commands
+│   │   └── docker_commands.py   # Docker commands
 │   ├── api/v1/              # API endpoints
 │   │   └── endpoints/
 │   │       ├── query.py     # Query endpoints (hybrid search)
@@ -439,11 +602,15 @@ rag-documentation-service/
 │   │   ├── chunker.py       # Document processing
 │   │   ├── retriever.py     # Vector store interface
 │   │   ├── router.py        # Smart query routing
-│   │   └── graph_extractor.py  # Entity extraction
+│   │   ├── logging.py       # Structured logging (structlog)
+│   │   └── async_utils.py   # ThreadPoolExecutor helpers
 │   ├── infrastructure/      # External adapters
 │   │   ├── faiss_store.py   # FAISS implementation
 │   │   ├── chroma_store.py  # ChromaDB implementation
-│   │   └── neo4j_store.py   # Neo4j graph store
+│   │   ├── neo4j_store.py   # Neo4j graph store
+│   │   └── cache.py         # Caching layer (memory/redis)
+│   ├── middleware/          # Request processing
+│   │   └── correlation.py   # Correlation ID middleware
 │   ├── ui/                  # Web interface
 │   │   └── app.py           # Gradio UI
 │   ├── config.py            # Configuration
@@ -451,6 +618,7 @@ rag-documentation-service/
 │   └── main.py              # FastAPI app
 ├── tests/                   # Test suite
 ├── data/                    # Data directories
+├── Makefile                # Thin wrapper for CLI commands
 ├── pyproject.toml          # Python packaging
 ├── Dockerfile              # Container build
 └── docker-compose.yml      # Container orchestration

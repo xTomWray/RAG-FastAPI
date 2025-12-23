@@ -1,6 +1,7 @@
 """Ingest endpoints for document processing and indexing."""
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -13,11 +14,13 @@ from rag_service.api.v1.schemas import (
     IngestStatus,
 )
 from rag_service.config import get_settings
+from rag_service.core.crash_logger import get_crash_logger, trace_operation
 from rag_service.core.exceptions import (
     CollectionNotFoundError,
     DocumentProcessingError,
     UnsupportedFileTypeError,
 )
+from rag_service.core.stats import get_stats_collector
 from rag_service.dependencies import (
     get_chunker,
     get_embedding_service,
@@ -27,6 +30,7 @@ from rag_service.dependencies import (
 )
 
 logger = logging.getLogger(__name__)
+crash_log = get_crash_logger()
 router = APIRouter(tags=["ingest"])
 
 
@@ -125,6 +129,8 @@ async def ingest_file(request: FileIngestRequest) -> IngestResponse:
 
         # Process the file
         file_path = Path(request.path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {request.path}")
         documents = chunker.process_file(file_path)
 
         if not documents:
@@ -160,8 +166,8 @@ async def ingest_file(request: FileIngestRequest) -> IngestResponse:
             collection=request.collection,
         )
 
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"File not found: {request.path}")
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except UnsupportedFileTypeError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except DocumentProcessingError as e:
@@ -188,6 +194,20 @@ async def ingest_directory(request: DirectoryIngestRequest) -> IngestResponse:
         HTTPException: If directory not found or processing fails.
     """
     settings = get_settings()
+    start_time = time.perf_counter()
+    success = True
+    documents_count = 0
+    chunks_count = 0
+    bytes_processed = 0
+
+    # Start crash-safe logging for entire ingest operation
+    crash_log.info(
+        "INGEST_DIRECTORY_START",
+        capture_state=True,
+        path=request.path,
+        collection=request.collection,
+        recursive=request.recursive,
+    )
 
     try:
         # Get services
@@ -198,11 +218,18 @@ async def ingest_directory(request: DirectoryIngestRequest) -> IngestResponse:
         # Process the directory
         dir_path = Path(request.path)
         if not dir_path.exists():
-            raise HTTPException(status_code=404, detail=f"Directory not found: {request.path}")
+            raise FileNotFoundError(f"Directory not found: {request.path}")
 
+        # STEP 1: Chunking
+        crash_log.info(
+            "INGEST_STEP_CHUNKING",
+            capture_state=True,
+            directory=str(dir_path),
+        )
         documents = chunker.process_directory(dir_path, recursive=request.recursive)
 
         if not documents:
+            crash_log.info("INGEST_NO_DOCUMENTS", path=request.path)
             return IngestResponse(
                 status=IngestStatus.SUCCESS,
                 documents_processed=0,
@@ -211,25 +238,71 @@ async def ingest_directory(request: DirectoryIngestRequest) -> IngestResponse:
                 errors=["No documents found in directory"],
             )
 
-        # Count unique files
+        # Count unique files and bytes
         files_processed = len({doc.metadata.get("source") for doc in documents})
+        documents_count = files_processed
+        chunks_count = len(documents)
+        bytes_processed = sum(len(doc.text.encode('utf-8')) for doc in documents)
 
-        # Generate embeddings in batches
+        crash_log.info(
+            "INGEST_CHUNKING_COMPLETE",
+            capture_state=True,
+            total_chunks=len(documents),
+            files_processed=files_processed,
+        )
+
+        # STEP 2: Generate embeddings (GPU-intensive)
+        crash_log.info(
+            "INGEST_STEP_EMBEDDING",
+            capture_state=True,
+            num_chunks=len(documents),
+        )
         texts = [doc.text for doc in documents]
         embeddings = embedding_service.embed_documents(texts)
+        crash_log.info(
+            "INGEST_EMBEDDING_COMPLETE",
+            capture_state=True,
+            embeddings_shape=str(embeddings.shape),
+        )
 
-        # Add to vector store
+        # STEP 3: Add to vector store
+        crash_log.info(
+            "INGEST_STEP_VECTOR_STORE",
+            capture_state=True,
+            collection=request.collection,
+        )
         vector_store.add_documents(
             documents=documents,
             embeddings=embeddings,
             collection=request.collection,
         )
 
-        # Persist vector store
-        vector_store.persist()
+        # Persist vector store (ChromaDB auto-persists, FAISS needs explicit persist)
+        if hasattr(vector_store, 'persist'):
+            try:
+                vector_store.persist()
+            except AttributeError:
+                # ChromaDB PersistentClient doesn't have persist() method
+                pass
 
-        # Build knowledge graph (if enabled)
+        crash_log.info("INGEST_VECTOR_STORE_COMPLETE", capture_state=True)
+
+        # STEP 4: Build knowledge graph (if enabled)
+        crash_log.info("INGEST_STEP_GRAPH", capture_state=True)
         graph_stats = _build_knowledge_graph(documents, request.collection)
+        crash_log.info(
+            "INGEST_GRAPH_COMPLETE",
+            capture_state=True,
+            entities=graph_stats.get("entities", 0),
+            relationships=graph_stats.get("relationships", 0),
+        )
+
+        crash_log.info(
+            "INGEST_DIRECTORY_SUCCESS",
+            capture_state=True,
+            documents_processed=len(documents),
+            files_processed=files_processed,
+        )
 
         return IngestResponse(
             status=IngestStatus.SUCCESS,
@@ -238,10 +311,30 @@ async def ingest_directory(request: DirectoryIngestRequest) -> IngestResponse:
             collection=request.collection,
         )
 
+    except FileNotFoundError as e:
+        success = False
+        crash_log.error("INGEST_FILE_NOT_FOUND", error=str(e))
+        raise HTTPException(status_code=404, detail=str(e))
     except DocumentProcessingError as e:
+        success = False
+        crash_log.error("INGEST_PROCESSING_ERROR", exc_info=True, error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
+        success = False
+        crash_log.critical("INGEST_UNEXPECTED_ERROR", exc_info=True, error=str(e))
         raise HTTPException(status_code=500, detail=f"Ingest failed: {e}")
+    finally:
+        # Record ingestion stats
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        stats = get_stats_collector()
+        stats.record_ingestion(
+            duration_ms=duration_ms,
+            documents=documents_count,
+            chunks=chunks_count,
+            bytes_processed=bytes_processed,
+            file_type="directory",
+            success=success,
+        )
 
 
 @router.get("/collections")
@@ -316,17 +409,31 @@ async def delete_collection(collection_name: str) -> dict[str, str]:
         vector_store = get_vector_store()
         try:
             vector_store.delete_collection(collection_name)
-            vector_store.persist()
+            # Persist if method exists (FAISS needs it, ChromaDB auto-persists)
+            if hasattr(vector_store, 'persist'):
+                try:
+                    vector_store.persist()
+                except AttributeError:
+                    pass
             deleted.append("vector")
-        except CollectionNotFoundError:
-            pass
+        except (CollectionNotFoundError, Exception) as e:
+            # ChromaDB raises different exception types, catch all and check if it's "not found"
+            error_msg = str(e).lower()
+            if "not found" in error_msg or "does not exist" in error_msg:
+                pass  # Collection doesn't exist, which is fine
+            else:
+                # Re-raise if it's a different error
+                raise
 
         # Delete from graph store if enabled
         if settings.enable_graph_rag:
             try:
                 graph_store = get_graph_store()
-                graph_store.delete_collection(collection_name)
-                deleted.append("graph")
+                # Check if collection exists in graph store before deleting
+                graph_collections = graph_store.list_collections()
+                if collection_name in graph_collections:
+                    graph_store.delete_collection(collection_name)
+                    deleted.append("graph")
             except Exception:
                 pass
 

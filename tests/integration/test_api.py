@@ -19,17 +19,23 @@ def test_client(tmp_path: Path):
     os.environ["EMBEDDING_MODEL"] = "sentence-transformers/all-MiniLM-L6-v2"
 
     # Clear cached settings and services
-    from rag_service.config import get_settings
+    from rag_service.config import reload_settings
     from rag_service.dependencies import (
         get_chunker,
         get_embedding_service,
         get_vector_store,
+        get_graph_store,
+        get_query_router,
     )
 
-    get_settings.cache_clear()
+    # Reload settings (clears manual cache)
+    reload_settings()
+    # Clear LRU caches
     get_embedding_service.cache_clear()
     get_vector_store.cache_clear()
     get_chunker.cache_clear()
+    get_graph_store.cache_clear()
+    get_query_router.cache_clear()
 
     from rag_service.main import create_app
 
@@ -174,8 +180,13 @@ class TestCollectionEndpoints:
         assert response.status_code == 200
 
         data = response.json()
-        assert "collections" in data
-        assert "count" in data
+        # Endpoint returns vector_collections and graph_collections
+        assert "vector_collections" in data
+        assert "vector_count" in data
+        # For backward compatibility, also check if collections key exists (might be added later)
+        # Or calculate total count
+        total_count = data.get("vector_count", 0) + data.get("graph_count", 0)
+        assert total_count >= 0
 
     def test_delete_collection(self, test_client: TestClient, tmp_path: Path) -> None:
         """Test deleting a collection."""
@@ -194,8 +205,11 @@ class TestCollectionEndpoints:
 
         # Verify deleted
         list_response = test_client.get("/api/v1/collections")
-        collections = [c["name"] for c in list_response.json()["collections"]]
-        assert "to_delete" not in collections
+        data = list_response.json()
+        vector_collections = [c["name"] for c in data.get("vector_collections", [])]
+        graph_collections = [c["name"] for c in data.get("graph_collections", [])]
+        all_collections = vector_collections + graph_collections
+        assert "to_delete" not in all_collections
 
     def test_delete_nonexistent_collection(self, test_client: TestClient) -> None:
         """Test deleting a nonexistent collection."""

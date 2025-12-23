@@ -1,10 +1,11 @@
-"""Health check endpoints."""
+"""Health check and monitoring endpoints."""
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from rag_service.config import get_settings
+from rag_service.core.stats import get_stats_collector, reset_stats
 from rag_service.dependencies import get_embedding_service, get_vector_store
 
 router = APIRouter(tags=["health"])
@@ -82,4 +83,84 @@ async def system_info() -> dict[str, Any]:
         info["vector_store"] = {"error": str(e)}
 
     return info
+
+
+@router.get("/stats")
+async def get_stats(
+    include_gpu: bool = Query(default=True, description="Include GPU metrics"),
+    include_errors: bool = Query(default=True, description="Include recent errors"),
+) -> dict[str, Any]:
+    """Get comprehensive service statistics.
+
+    Returns detailed runtime statistics including:
+    - Service uptime and health status
+    - Operation counts and latencies (embeddings, searches, ingestions)
+    - GPU/CPU resource utilization
+    - Recent errors
+
+    Args:
+        include_gpu: Whether to include GPU metrics (may take ~100ms)
+        include_errors: Whether to include recent error log
+
+    Returns:
+        Comprehensive statistics dictionary.
+    """
+    stats = get_stats_collector()
+    summary = stats.get_summary()
+
+    # Optionally exclude sections to reduce response size
+    if not include_gpu:
+        summary["gpu"] = {"available": summary.get("gpu", {}).get("available", False)}
+
+    if not include_errors:
+        summary["recent_errors"] = []
+
+    return summary
+
+
+@router.get("/stats/gpu")
+async def get_gpu_stats() -> dict[str, Any]:
+    """Get GPU-specific statistics.
+
+    Returns current GPU metrics including memory, temperature,
+    utilization, and power draw.
+
+    Returns:
+        GPU statistics dictionary.
+    """
+    stats = get_stats_collector()
+    return stats.get_gpu_info()
+
+
+@router.get("/stats/operations")
+async def get_operation_stats() -> dict[str, Any]:
+    """Get operation statistics only.
+
+    Returns statistics for all operation types without
+    GPU or system information.
+
+    Returns:
+        Operation statistics dictionary.
+    """
+    stats = get_stats_collector()
+    summary = stats.get_summary()
+    return {
+        "uptime": summary["service"]["uptime"],
+        "health": summary["health"],
+        "operations": summary["operations"],
+    }
+
+
+@router.post("/stats/reset")
+async def post_reset_stats() -> dict[str, str]:
+    """Reset all statistics counters.
+
+    Clears all accumulated statistics. Useful for benchmarking
+    or after configuration changes.
+
+    Returns:
+        Confirmation message.
+    """
+    reset_stats()
+    return {"status": "ok", "message": "Statistics reset successfully"}
 

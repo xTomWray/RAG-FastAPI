@@ -22,12 +22,27 @@ from rag_service.infrastructure.neo4j_store import (
 
 @lru_cache
 def get_embedding_service() -> SentenceTransformerEmbedding:
-    """Get the embedding service singleton."""
+    """Get the embedding service singleton with GPU safeguards."""
     settings = get_settings()
     return create_embedding_service(
         model_name=settings.embedding_model,
         device=settings.get_resolved_device(),
         batch_size=settings.embedding_batch_size,
+        # GPU safeguard settings
+        enable_gpu_safeguards=settings.enable_gpu_safeguards,
+        max_memory_percent=settings.gpu_max_memory_percent,
+        max_temperature_c=settings.gpu_max_temperature_c,
+        inter_batch_delay=settings.gpu_inter_batch_delay,
+        adaptive_batch_size=settings.gpu_adaptive_batch_size,
+        min_batch_size=settings.gpu_min_batch_size,
+        # Power management
+        gpu_power_limit_watts=settings.gpu_power_limit_watts,
+        enable_gpu_warmup=settings.enable_gpu_warmup,
+        # Precision
+        precision=settings.precision,
+        # Performance
+        enable_tf32=settings.enable_tf32,
+        enable_cudnn_benchmark=settings.enable_cudnn_benchmark,
     )
 
 

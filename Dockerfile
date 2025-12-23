@@ -107,16 +107,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 FROM gpu-base AS gpu
 
-# Copy requirements
-COPY requirements.txt ./
+# Copy requirements (use CUDA-specific requirements file)
+COPY requirements-cuda.txt ./
 
 # Create virtual environment and install dependencies with CUDA support
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+# Install all dependencies with CUDA-enabled PyTorch
 RUN pip install --upgrade pip && \
-    pip install torch --index-url https://download.pytorch.org/whl/cu121 && \
-    pip install -r requirements.txt
+    pip install -r requirements-cuda.txt
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash appuser && \

@@ -1,11 +1,17 @@
 """Document chunking and processing using unstructured library."""
 
-import hashlib
+import logging
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Literal
 
+import hashlib
+
 from rag_service.core.exceptions import DocumentProcessingError, UnsupportedFileTypeError
 from rag_service.core.retriever import Document
+
+logger = logging.getLogger(__name__)
 
 
 # Supported file extensions
@@ -127,12 +133,18 @@ class DocumentChunker:
         self,
         directory: Path | str,
         recursive: bool = True,
+        max_workers: int | None = None,
     ) -> list[Document]:
-        """Process all supported files in a directory.
+        """Process all supported files in a directory using parallel processing.
+
+        Processes files in parallel using ThreadPoolExecutor to utilize all
+        available CPU cores. This significantly speeds up processing of
+        multiple files.
 
         Args:
             directory: Path to the directory to process.
             recursive: Whether to process subdirectories.
+            max_workers: Maximum number of worker threads. Defaults to CPU count.
 
         Returns:
             List of Document objects from all files.
@@ -145,17 +157,62 @@ class DocumentChunker:
         if not path.is_dir():
             raise DocumentProcessingError(f"Not a directory: {path}")
 
-        documents = []
+        # Collect all file paths first
         pattern = "**/*" if recursive else "*"
+        file_paths = [
+            file_path
+            for file_path in path.glob(pattern)
+            if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_EXTENSIONS
+        ]
 
-        for file_path in path.glob(pattern):
-            if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_EXTENSIONS:
+        if not file_paths:
+            logger.info(f"No supported files found in {path}")
+            return []
+
+        # Determine optimal worker count
+        if max_workers is None:
+            cpu_count = os.cpu_count() or 4
+            max_workers = min(cpu_count, len(file_paths))
+            # Cap at reasonable limit to avoid excessive thread overhead
+            max_workers = min(max_workers, 16)
+
+        logger.info(
+            f"Processing {len(file_paths)} files in parallel using {max_workers} workers"
+        )
+
+        documents = []
+        errors = []
+
+        # Process files in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all file processing tasks
+            future_to_path = {
+                executor.submit(self.process_file, file_path): file_path
+                for file_path in file_paths
+            }
+
+            # Collect results as they complete
+            for future in as_completed(future_to_path):
+                file_path = future_to_path[future]
                 try:
-                    file_docs = self.process_file(file_path)
+                    file_docs = future.result()
                     documents.extend(file_docs)
-                except (UnsupportedFileTypeError, DocumentProcessingError):
-                    # Skip files that can't be processed
+                    logger.debug(f"Processed {file_path.name}: {len(file_docs)} chunks")
+                except (UnsupportedFileTypeError, DocumentProcessingError) as e:
+                    logger.warning(f"Skipping {file_path.name}: {e}")
+                    errors.append(str(file_path))
                     continue
+                except Exception as e:
+                    logger.error(f"Error processing {file_path.name}: {e}")
+                    errors.append(str(file_path))
+                    continue
+
+        if errors:
+            logger.warning(f"Failed to process {len(errors)} files: {errors[:5]}...")
+
+        logger.info(
+            f"Completed processing: {len(documents)} total chunks from {len(file_paths) - len(errors)} files"
+        )
 
         return documents
 
@@ -196,7 +253,17 @@ class DocumentChunker:
                 extract_images_in_pdf=False,
             )
             return "\n\n".join(el.text for el in elements if el.text.strip())
-        except ImportError:
+        except (ImportError, Exception) as e:
+            # Fallback to pypdf if unstructured fails (missing poppler, etc.)
+            error_msg = str(e).lower()
+            if "poppler" in error_msg or "page count" in error_msg:
+                logger.warning(
+                    f"Poppler not available for PDF processing. Falling back to pypdf for {path.name}. "
+                    "Install Poppler for better PDF extraction: https://github.com/oschwartz10612/poppler-windows/releases"
+                )
+            else:
+                logger.warning(f"unstructured PDF processing failed for {path.name}: {e}. Falling back to pypdf.")
+            
             # Fallback to pypdf
             from pypdf import PdfReader
 
@@ -241,23 +308,44 @@ class DocumentChunker:
             return self._extract_text_file(path)
 
     def _extract_docx(self, path: Path) -> str:
-        """Extract text from DOCX files."""
+        """Extract text from DOCX files.
+
+        Uses python-docx directly for speed. The unstructured library's
+        partition_docx is slower due to table/image analysis overhead.
+
+        Optimized with list comprehensions for better performance.
+        """
+        logger.debug(f"Extracting text from DOCX: {path.name}")
+
         try:
-            from unstructured.partition.docx import partition_docx
+            from docx import Document as DocxDocument
 
-            elements = partition_docx(str(path))
-            return "\n\n".join(el.text for el in elements if el.text.strip())
-        except ImportError:
-            # Fallback to python-docx if available
-            try:
-                from docx import Document as DocxDocument
+            doc = DocxDocument(str(path))
 
-                doc = DocxDocument(str(path))
-                return "\n\n".join(para.text for para in doc.paragraphs if para.text.strip())
-            except ImportError:
-                raise DocumentProcessingError(
-                    "DOCX processing requires 'unstructured' or 'python-docx' package"
+            # Extract paragraphs (optimized)
+            paragraphs = [para.text for para in doc.paragraphs if para.text.strip()]
+
+            # Extract tables (optimized with list comprehension)
+            table_texts = [
+                " | ".join(
+                    cell.text.strip() for cell in row.cells if cell.text.strip()
                 )
+                for table in doc.tables
+                for row in table.rows
+            ]
+            paragraphs.extend(text for text in table_texts if text)
+
+            text = "\n\n".join(paragraphs)
+            logger.debug(f"Extracted {len(text):,} characters from {path.name}")
+            return text
+
+        except ImportError:
+            raise DocumentProcessingError(
+                "DOCX processing requires 'python-docx' package. "
+                "Install it with: pip install python-docx"
+            )
+        except Exception as e:
+            raise DocumentProcessingError(f"Failed to process DOCX file {path.name}: {e}")
 
     def _chunk_text(self, text: str) -> list[str]:
         """Split text into overlapping chunks.

@@ -1,122 +1,129 @@
-.PHONY: install dev test test-unit test-integration lint format type-check pre-commit run clean help
+# RAG Documentation Service - Makefile
+# All targets are thin wrappers around: python -m rag_service
+#
+# This Makefile provides convenience shortcuts for common commands.
+# All logic is implemented in the Python CLI for cross-platform support.
+
+.PHONY: install dev gpu all test test-unit test-integration test-cov \
+        lint lint-fix format format-check typecheck check pre-commit \
+        run run-prod docker-build docker-run clean clean-data help
 
 # Default target
 .DEFAULT_GOAL := help
 
-# Python executable
-PYTHON := python
-PIP := pip
+# Auto-detect Python in virtual environment
+PYTHON := $(shell \
+	if [ -f ./rag_venv/bin/python ]; then echo ./rag_venv/bin/python; \
+	elif [ -f ./rag_venv/Scripts/python.exe ]; then echo ./rag_venv/Scripts/python.exe; \
+	elif [ -f ./.venv/bin/python ]; then echo ./.venv/bin/python; \
+	elif [ -f ./.venv/Scripts/python.exe ]; then echo ./.venv/Scripts/python.exe; \
+	else echo python; fi)
+
+# Set PYTHONPATH to include src directory so rag_service module can be found
+export PYTHONPATH := $(CURDIR)/src:$(PYTHONPATH)
 
 #---------------------------------------------------------------------------
 # Installation
 #---------------------------------------------------------------------------
 
 install: ## Install production dependencies
-	$(PIP) install -e .
+	$(PYTHON) -m rag_service install
 
 dev: ## Install development dependencies
-	$(PIP) install -e ".[dev]"
-	pre-commit install
+	$(PYTHON) -m rag_service install --dev
 
 gpu: ## Install with GPU support
-	$(PIP) install -e ".[gpu]"
+	$(PYTHON) -m rag_service install --gpu
 
 all: ## Install all optional dependencies
-	$(PIP) install -e ".[all]"
+	$(PYTHON) -m rag_service install --all
 
 #---------------------------------------------------------------------------
 # Testing
 #---------------------------------------------------------------------------
 
 test: ## Run all tests
-	pytest tests/ -v --tb=short
+	$(PYTHON) -m rag_service test
 
 test-unit: ## Run unit tests only
-	pytest tests/unit/ -v --tb=short
+	$(PYTHON) -m rag_service test --unit
 
 test-integration: ## Run integration tests only
-	pytest tests/integration/ -v --tb=short
+	$(PYTHON) -m rag_service test --integration
 
 test-cov: ## Run tests with coverage report
-	pytest tests/ -v --cov=src/rag_service --cov-report=term-missing --cov-report=html
+	$(PYTHON) -m rag_service test --coverage
 
 #---------------------------------------------------------------------------
 # Code Quality
 #---------------------------------------------------------------------------
 
 lint: ## Run linter
-	ruff check src/ tests/
+	$(PYTHON) -m rag_service lint
 
 lint-fix: ## Run linter and fix issues
-	ruff check src/ tests/ --fix
+	$(PYTHON) -m rag_service lint --fix
 
 format: ## Format code
-	ruff format src/ tests/
+	$(PYTHON) -m rag_service format
 
 format-check: ## Check code formatting
-	ruff format src/ tests/ --check
+	$(PYTHON) -m rag_service format --check
 
-type-check: ## Run type checker
-	mypy src/
+typecheck: ## Run type checker
+	$(PYTHON) -m rag_service typecheck
+
+check: ## Run all checks (lint, format, typecheck)
+	$(PYTHON) -m rag_service check
 
 pre-commit: ## Run pre-commit hooks on all files
 	pre-commit run --all-files
-
-check: lint format-check type-check ## Run all checks
 
 #---------------------------------------------------------------------------
 # Running
 #---------------------------------------------------------------------------
 
 run: ## Run the development server
-	uvicorn rag_service.main:app --reload --host 0.0.0.0 --port 8000
+	$(PYTHON) -m rag_service start --reload
 
-run-prod: ## Run production server
-	uvicorn rag_service.main:app --host 0.0.0.0 --port 8000 --workers 4
+run-prod: ## Run production server (API only)
+	$(PYTHON) -m rag_service start --workers 4 --no-ui
 
 #---------------------------------------------------------------------------
 # Docker
 #---------------------------------------------------------------------------
 
 docker-build: ## Build Docker image
-	docker build -t rag-documentation-service .
+	$(PYTHON) -m rag_service docker-build
+
+docker-build-gpu: ## Build GPU Docker image
+	$(PYTHON) -m rag_service docker-build --gpu
 
 docker-run: ## Run Docker container
-	docker run -p 8000:8000 -v $(PWD)/data:/app/data rag-documentation-service
-
-docker-compose-up: ## Start with docker-compose
-	docker-compose up -d
-
-docker-compose-down: ## Stop docker-compose
-	docker-compose down
+	$(PYTHON) -m rag_service docker-run
 
 #---------------------------------------------------------------------------
 # Cleanup
 #---------------------------------------------------------------------------
 
 clean: ## Clean build artifacts
-	rm -rf build/
-	rm -rf dist/
-	rm -rf *.egg-info/
-	rm -rf .pytest_cache/
-	rm -rf .mypy_cache/
-	rm -rf .ruff_cache/
-	rm -rf htmlcov/
-	rm -rf .coverage
-	find . -type d -name __pycache__ -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
+	$(PYTHON) -m rag_service clean
 
 clean-data: ## Clean data directories (careful!)
-	rm -rf data/index/
-	rm -rf data/chroma/
+	$(PYTHON) -m rag_service clean --data
 
 #---------------------------------------------------------------------------
 # Help
 #---------------------------------------------------------------------------
 
 help: ## Show this help message
+	@echo "RAG Documentation Service"
+	@echo ""
+	@echo "All targets delegate to: $(PYTHON) -m rag_service"
+	@echo ""
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
-
+	@echo ""
+	@echo "For more options, run: $(PYTHON) -m rag_service --help"

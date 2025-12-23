@@ -6,7 +6,6 @@ from typing import Any
 
 import chromadb
 import numpy as np
-from chromadb.config import Settings as ChromaSettings
 from numpy.typing import NDArray
 
 from rag_service.core.exceptions import CollectionNotFoundError
@@ -29,12 +28,9 @@ class ChromaVectorStore(VectorStore):
         self._persist_dir = Path(persist_dir)
         self._persist_dir.mkdir(parents=True, exist_ok=True)
 
-        self._client = chromadb.Client(
-            ChromaSettings(
-                chroma_db_impl="duckdb+parquet",
-                persist_directory=str(self._persist_dir),
-                anonymized_telemetry=False,
-            )
+        # Use new ChromaDB API (PersistentClient for local persistence)
+        self._client = chromadb.PersistentClient(
+            path=str(self._persist_dir),
         )
 
     def _get_or_create_collection(self, collection: str) -> chromadb.Collection:
@@ -179,8 +175,13 @@ class ChromaVectorStore(VectorStore):
         }
 
     def persist(self) -> None:
-        """Persist the database to disk."""
-        self._client.persist()
+        """Persist the database to disk.
+        
+        Note: ChromaDB PersistentClient auto-persists, so this is a no-op.
+        Kept for API compatibility with FAISSVectorStore.
+        """
+        # ChromaDB PersistentClient automatically persists, no action needed
+        pass
 
     def load(self) -> None:
         """Load is automatic with ChromaDB's persistent client."""

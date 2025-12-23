@@ -1,27 +1,32 @@
 """FastAPI application factory and configuration."""
 
-import logging
 import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from rag_service.api.v1.router import router as v1_router
 from rag_service.config import get_settings
+from rag_service.core.logging import configure_logging, get_logger
+from rag_service.middleware.correlation import CorrelationIdMiddleware
 
 # Check if GUI should be enabled (default: True)
 ENABLE_GUI = os.environ.get("ENABLE_GUI", "true").lower() not in ("false", "0", "no")
 
 
 def setup_logging() -> None:
-    """Configure logging for the application."""
+    """Configure structured logging for the application."""
     settings = get_settings()
-    logging.basicConfig(
-        level=getattr(logging, settings.log_level),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    # Use console format in development (LOG_FORMAT=console), JSON in production
+    log_format = os.environ.get("LOG_FORMAT", "json")
+    if log_format not in ("json", "console"):
+        log_format = "json"
+    configure_logging(
+        log_format=log_format,  # type: ignore[arg-type]
+        log_level=settings.log_level,
     )
 
 
@@ -33,28 +38,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     # Startup
     setup_logging()
-    logger = logging.getLogger(__name__)
+    logger = get_logger(__name__)
     settings = get_settings()
 
-    logger.info("Starting RAG Documentation Service")
-    logger.info(f"Embedding model: {settings.embedding_model}")
-    logger.info(f"Device: {settings.get_resolved_device()}")
-    logger.info(f"Vector store: {settings.vector_store_backend}")
+    logger.info(
+        "Starting RAG Documentation Service",
+        embedding_model=settings.embedding_model,
+        device=settings.get_resolved_device(),
+        vector_store=settings.vector_store_backend,
+    )
 
     # Pre-load models on startup (optional, can be lazy loaded)
     try:
         from rag_service.dependencies import get_embedding_service, get_vector_store
 
-        logger.info("Loading embedding model...")
+        logger.info("Loading embedding model")
         _ = get_embedding_service()
         logger.info("Embedding model loaded successfully")
 
-        logger.info("Initializing vector store...")
+        logger.info("Initializing vector store")
         _ = get_vector_store()
         logger.info("Vector store initialized")
 
     except Exception as e:
-        logger.warning(f"Failed to pre-load models: {e}")
+        logger.warning("Failed to pre-load models", error=str(e))
         logger.warning("Models will be loaded on first request")
 
     yield
@@ -70,7 +77,7 @@ def create_app() -> FastAPI:
         Configured FastAPI application instance.
     """
     settings = get_settings()
-    logger = logging.getLogger(__name__)
+    logger = get_logger(__name__)
 
     app = FastAPI(
         title="RAG Documentation Service",
@@ -84,6 +91,9 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
         lifespan=lifespan,
     )
+
+    # Add correlation ID middleware for request tracing
+    app.add_middleware(CorrelationIdMiddleware)
 
     # Configure CORS
     app.add_middleware(
@@ -101,6 +111,19 @@ def create_app() -> FastAPI:
     from rag_service.api.v1.endpoints import health
 
     app.include_router(health.router)
+
+    # Serve manifest.json to prevent 404 errors from browser PWA detection
+    @app.get("/manifest.json", include_in_schema=False)
+    async def manifest():
+        return JSONResponse({
+            "name": "RAG Documentation Service",
+            "short_name": "RAG Service",
+            "description": "Document retrieval and question answering",
+            "start_url": "/ui",
+            "display": "standalone",
+            "background_color": "#ffffff",
+            "theme_color": "#1976d2",
+        })
 
     # Mount Gradio UI if enabled
     if ENABLE_GUI:

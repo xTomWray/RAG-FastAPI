@@ -15,8 +15,12 @@ from rag_service.core.retriever import Document
 
 @pytest.fixture
 def temp_dir() -> Generator[Path, None, None]:
-    """Create a temporary directory for tests."""
-    with tempfile.TemporaryDirectory() as tmpdir:
+    """Create a temporary directory for tests.
+
+    Uses ignore_cleanup_errors=True to handle Windows file lock issues
+    with ChromaDB which may not release file handles immediately.
+    """
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         yield Path(tmpdir)
 
 

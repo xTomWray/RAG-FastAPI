@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 from rag_service.api.v1.schemas import QueryRequest, QueryResponse, SearchResultSchema
 from rag_service.config import get_settings
 from rag_service.core.exceptions import CollectionNotFoundError
+from rag_service.core.stats import get_stats_collector
 from rag_service.dependencies import (
     get_embedding_service,
     get_graph_store,
@@ -140,9 +142,17 @@ def _perform_vector_search(
 
     Returns:
         List of search results.
+    
+    Raises:
+        CollectionNotFoundError: If collection doesn't exist.
     """
     embedding_service = get_embedding_service()
     vector_store = get_vector_store()
+
+    # Validate collection exists
+    collections = vector_store.list_collections()
+    if collection not in collections:
+        raise CollectionNotFoundError(f"Collection '{collection}' not found")
 
     query_embedding = embedding_service.embed_query(question)
     results = vector_store.search(
@@ -323,6 +333,10 @@ async def hybrid_query(request: HybridQueryRequest) -> HybridQueryResponse:
         Hybrid response with vector chunks and graph context.
     """
     settings = get_settings()
+    start_time = time.perf_counter()
+    success = True
+    strategy = "unknown"
+    results_count = 0
 
     try:
         # Determine strategy
@@ -353,6 +367,9 @@ async def hybrid_query(request: HybridQueryRequest) -> HybridQueryResponse:
                 hops=request.graph_hops,
             )
 
+        # Track results count for stats
+        results_count = len(chunks) + len(graph_context)
+
         # Collect sources
         sources = list({c.metadata.get("source", "unknown") for c in chunks if c.metadata})
 
@@ -376,10 +393,22 @@ async def hybrid_query(request: HybridQueryRequest) -> HybridQueryResponse:
         )
 
     except CollectionNotFoundError as e:
+        success = False
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        success = False
         logger.exception("Hybrid query failed")
         raise HTTPException(status_code=500, detail=f"Query failed: {e}")
+    finally:
+        # Record search stats
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        stats = get_stats_collector()
+        stats.record_search(
+            duration_ms=duration_ms,
+            results_count=results_count,
+            strategy=strategy,
+            success=success,
+        )
 
 
 @router.get("/query/explain")
