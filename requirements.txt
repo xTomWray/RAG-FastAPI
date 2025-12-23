@@ -1,0 +1,40 @@
+# Production dependencies (CPU version)
+# For GPU/CUDA support, use: pip install -r requirements-cuda.txt
+#
+# Installation:
+#   CPU:  pip install -r requirements.txt
+#   CUDA: pip install -r requirements-cuda.txt
+
+# Core Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic-settings>=2.1.0
+pyyaml>=6.0
+
+# Vector Search
+faiss-cpu>=1.7.4
+chromadb>=0.4.22
+
+# Embeddings (CPU version - for GPU see requirements-cuda.txt)
+sentence-transformers>=2.3.0
+torch>=2.0.0
+
+# Document Processing
+unstructured>=0.15.0
+pypdf>=3.17.0
+python-docx>=1.1.2
+
+# Platform-specific magic library
+python-magic-bin>=0.4.14;sys_platform=='win32'
+python-magic>=0.4.27;sys_platform!='win32'
+
+# Utilities
+numpy>=1.24.0
+httpx>=0.26.0
+
+# GraphRAG
+networkx>=3.2.0
+
+# Web UI
+gradio>=4.44.0
+

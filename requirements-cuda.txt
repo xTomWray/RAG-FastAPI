@@ -1,0 +1,53 @@
+# CUDA-enabled PyTorch dependencies
+# Install with: pip install -r requirements-cuda.txt
+#
+# This installs PyTorch with CUDA 12.4 support for GPU acceleration.
+# CUDA 12.4 is backwards compatible with newer drivers (CUDA 12.x, 13.x).
+#
+# Check your CUDA version: nvidia-smi (top right shows "CUDA Version")
+# For other CUDA versions, see: https://pytorch.org/get-started/locally/
+#
+# IMPORTANT: Install PyTorch FIRST to ensure CUDA version is used:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+#   pip install -r requirements-cuda.txt
+
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+# Core Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic-settings>=2.1.0
+pyyaml>=6.0
+
+# Vector Search
+faiss-cpu>=1.7.4
+chromadb>=0.4.22
+
+# Embeddings (CUDA-enabled) - torch MUST come from the cu124 index above
+sentence-transformers>=2.3.0
+torch>=2.4.0
+
+# Document Processing
+unstructured>=0.15.0
+pypdf>=3.17.0
+python-docx>=1.1.2
+
+# Platform-specific magic library
+python-magic-bin>=0.4.14;sys_platform=='win32'
+python-magic>=0.4.27;sys_platform!='win32'
+
+# Utilities
+numpy>=1.24.0
+httpx>=0.26.0
+
+# GPU Monitoring (for temperature and memory safeguards)
+nvidia-ml-py>=12.535.0
+
+# System Monitoring (for crash logging - CPU, RAM, disk)
+psutil>=5.9.0
+
+# GraphRAG
+networkx>=3.2.0
+
+# Web UI
+gradio>=4.44.0

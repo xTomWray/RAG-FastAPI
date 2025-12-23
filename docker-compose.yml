@@ -1,0 +1,222 @@
+version: '3.8'
+
+services:
+  # =============================================================================
+  # Neo4j Graph Database
+  # =============================================================================
+  neo4j:
+    image: neo4j:5-community
+    container_name: rag-neo4j
+    ports:
+      - "7474:7474"  # HTTP Browser
+      - "7687:7687"  # Bolt protocol
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    environment:
+      - NEO4J_AUTH=neo4j/ragpassword123
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_memory_pagecache_size=512M
+      - NEO4J_dbms_memory_heap_initial__size=512M
+      - NEO4J_dbms_memory_heap_max__size=1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7474"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    profiles:
+      - graphrag
+
+  # =============================================================================
+  # RAG Service - CPU Version (Vector Only)
+  # =============================================================================
+  rag-service:
+    build:
+      context: .
+      target: production
+    image: rag-documentation-service:latest
+    container_name: rag-service
+    ports:
+      - "8080:8080"
+    volumes:
+      - rag-data:/app/data
+      - ./documents:/app/documents:ro
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - DEVICE=cpu
+      - EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+      - VECTOR_STORE_BACKEND=faiss
+      - CHUNK_SIZE=512
+      - CHUNK_OVERLAP=50
+      - LOG_LEVEL=INFO
+      - ENABLE_GUI=true
+      # GraphRAG disabled for basic setup
+      - ENABLE_GRAPH_RAG=false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # =============================================================================
+  # RAG Service - CPU with GraphRAG (Neo4j)
+  # =============================================================================
+  rag-service-graphrag:
+    build:
+      context: .
+      target: production
+    image: rag-documentation-service:latest
+    container_name: rag-service-graphrag
+    ports:
+      - "8082:8080"
+    volumes:
+      - rag-data-graphrag:/app/data
+      - ./documents:/app/documents:ro
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - DEVICE=cpu
+      - EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+      - VECTOR_STORE_BACKEND=faiss
+      - CHUNK_SIZE=512
+      - CHUNK_OVERLAP=50
+      - LOG_LEVEL=INFO
+      - ENABLE_GUI=true
+      # GraphRAG enabled
+      - ENABLE_GRAPH_RAG=true
+      - GRAPH_STORE_BACKEND=neo4j
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=ragpassword123
+      - ROUTER_MODE=pattern
+      - ENTITY_EXTRACTION_MODE=rule_based
+      - ENTITY_EXTRACTION_DOMAIN=mavlink
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    profiles:
+      - graphrag
+
+  # =============================================================================
+  # RAG Service - GPU Version (CUDA)
+  # =============================================================================
+  rag-service-gpu:
+    build:
+      context: .
+      target: gpu
+    image: rag-documentation-service:gpu
+    container_name: rag-service-gpu
+    ports:
+      - "8081:8080"
+    volumes:
+      - rag-data-gpu:/app/data
+      - ./documents:/app/documents:ro
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - DEVICE=cuda
+      - EMBEDDING_MODEL=BAAI/bge-large-en-v1.5
+      - VECTOR_STORE_BACKEND=faiss
+      - CHUNK_SIZE=512
+      - CHUNK_OVERLAP=50
+      - LOG_LEVEL=INFO
+      - ENABLE_GUI=true
+      - ENABLE_GRAPH_RAG=false
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    profiles:
+      - gpu
+
+  # =============================================================================
+  # RAG Service - GPU with GraphRAG
+  # =============================================================================
+  rag-service-gpu-graphrag:
+    build:
+      context: .
+      target: gpu
+    image: rag-documentation-service:gpu
+    container_name: rag-service-gpu-graphrag
+    ports:
+      - "8083:8080"
+    volumes:
+      - rag-data-gpu-graphrag:/app/data
+      - ./documents:/app/documents:ro
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - DEVICE=cuda
+      - EMBEDDING_MODEL=BAAI/bge-large-en-v1.5
+      - VECTOR_STORE_BACKEND=faiss
+      - CHUNK_SIZE=512
+      - CHUNK_OVERLAP=50
+      - LOG_LEVEL=INFO
+      - ENABLE_GUI=true
+      # GraphRAG enabled
+      - ENABLE_GRAPH_RAG=true
+      - GRAPH_STORE_BACKEND=neo4j
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=ragpassword123
+      - ROUTER_MODE=pattern
+      - ENTITY_EXTRACTION_MODE=rule_based
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    profiles:
+      - gpu-graphrag
+
+volumes:
+  neo4j-data:
+    name: rag-neo4j-data
+  neo4j-logs:
+    name: rag-neo4j-logs
+  rag-data:
+    name: rag-documentation-data
+  rag-data-graphrag:
+    name: rag-documentation-data-graphrag
+  rag-data-gpu:
+    name: rag-documentation-data-gpu
+  rag-data-gpu-graphrag:
+    name: rag-documentation-data-gpu-graphrag
+
+networks:
+  default:
+    name: rag-network

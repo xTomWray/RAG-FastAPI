@@ -1,0 +1,158 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rag-documentation-service"
+version = "0.1.0"
+description = "A cross-platform RAG API service for document retrieval and question answering"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["rag", "retrieval", "embeddings", "fastapi", "vector-search"]
+
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic-settings>=2.1.0",
+    "pyyaml>=6.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "structlog>=24.1.0",
+    "faiss-cpu>=1.7.4",
+    "chromadb>=0.4.22",
+    "sentence-transformers>=2.3.0",
+    "torch>=2.0.0",
+    "unstructured>=0.15.0",
+    "python-docx>=1.1.2",
+    "pypdf>=3.17.0",
+    "python-magic-bin>=0.4.14;sys_platform=='win32'",
+    "python-magic>=0.4.27;sys_platform!='win32'",
+    "numpy>=1.24.0",
+    "httpx>=0.26.0",
+    # GraphRAG dependencies
+    "networkx>=3.2.0",
+    # UI dependencies
+    "gradio>=4.44.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.26.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+    "pre-commit>=3.6.0",
+]
+gpu = [
+    "torch>=2.0.0",
+]
+ocr = [
+    "pytesseract>=0.3.10",
+    "pdf2image>=1.16.0",
+]
+graphrag = [
+    "neo4j>=5.15.0",
+]
+observability = [
+    "opentelemetry-api>=1.22.0",
+    "opentelemetry-sdk>=1.22.0",
+    "opentelemetry-instrumentation-fastapi>=0.43b0",
+]
+cache = [
+    "redis>=5.0.0",
+    "hiredis>=2.3.0",
+]
+all = [
+    "rag-documentation-service[dev,gpu,ocr,graphrag,observability,cache]",
+]
+
+[project.urls]
+Homepage = "https://github.com/youruser/rag-documentation-service"
+Documentation = "https://github.com/youruser/rag-documentation-service#readme"
+Repository = "https://github.com/youruser/rag-documentation-service"
+Issues = "https://github.com/youruser/rag-documentation-service/issues"
+
+[project.scripts]
+rag-service = "rag_service.cli.main:run_with_restart_loop"
+rag-ui = "rag_service.ui.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rag_service"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "B904",   # raise without from inside except
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["rag_service"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+filterwarnings = [
+    # Suppress SWIG deprecation warnings from FAISS library (external dependency)
+    "ignore:builtin type Swig.*:DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["src/rag_service"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+
