@@ -646,4 +646,3 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [ChromaDB](https://www.trychroma.com/) - Vector database
 - [FastAPI](https://fastapi.tiangolo.com/) - Web framework
 - [unstructured](https://unstructured.io/) - Document processing
-

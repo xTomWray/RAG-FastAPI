@@ -29,4 +29,3 @@ repos:
           - types-requests
           - pydantic
         args: [--ignore-missing-imports]
-

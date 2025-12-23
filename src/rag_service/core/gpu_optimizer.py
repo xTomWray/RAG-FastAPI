@@ -17,7 +17,7 @@ import logging
 import subprocess
 import time
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -207,11 +207,13 @@ def detect_hardware() -> HardwareProfile:
     # Detect CPU
     try:
         import psutil
+
         profile.cpu_cores = psutil.cpu_count(logical=False) or 1
         profile.ram_total_gb = psutil.virtual_memory().total / (1024**3)
         profile.ram_free_gb = psutil.virtual_memory().available / (1024**3)
     except ImportError:
         import os
+
         profile.cpu_cores = os.cpu_count() or 1
 
     # Detect GPU via PyTorch
@@ -240,9 +242,7 @@ def detect_hardware() -> HardwareProfile:
             profile.vram_total_gb = props.total_memory / (1024**3)
 
             # Free VRAM (approximate - PyTorch reserved vs total)
-            profile.vram_free_gb = (
-                props.total_memory - torch.cuda.memory_reserved(0)
-            ) / (1024**3)
+            profile.vram_free_gb = (props.total_memory - torch.cuda.memory_reserved(0)) / (1024**3)
 
         elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             profile.gpu_available = True
@@ -420,20 +420,16 @@ def calculate_optimal_settings(
     if settings.device != "cpu" and hw.vram_total_gb > 0:
         # Available VRAM for batching (after model load)
         model_size = (
-            model.model_size_fp16_gb if settings.precision == "fp16"
-            else model.model_size_fp32_gb
+            model.model_size_fp16_gb if settings.precision == "fp16" else model.model_size_fp32_gb
         )
         memory_per_item = (
-            model.memory_per_item_fp16_mb if settings.precision == "fp16"
+            model.memory_per_item_fp16_mb
+            if settings.precision == "fp16"
             else model.memory_per_item_fp32_mb
         )
 
         # VRAM budget
-        vram_budget_gb = (
-            hw.vram_total_gb
-            * (vram_budget_percent / 100.0)
-            * factors["vram"]
-        )
+        vram_budget_gb = hw.vram_total_gb * (vram_budget_percent / 100.0) * factors["vram"]
         available_for_batch_gb = vram_budget_gb - model_size
 
         if available_for_batch_gb > 0:
@@ -539,7 +535,7 @@ def run_calibration(
 
     # Detect hardware
     hw = detect_hardware()
-    model_profile = get_model_profile(model_name)
+    get_model_profile(model_name)
 
     # Determine test batch sizes
     if test_batch_sizes is None:
@@ -557,7 +553,7 @@ def run_calibration(
     test_text = "This is a calibration test sentence for measuring embedding performance."
 
     # Results storage
-    results: list[dict] = []
+    results: list[dict[str, Any]] = []
 
     for batch_size in test_batch_sizes:
         logger.info(f"Testing batch size {batch_size}...")
@@ -592,17 +588,19 @@ def run_calibration(
 
             # Measure GPU stats
             if torch.cuda.is_available():
-                peak_memory = max(
-                    peak_memory,
-                    torch.cuda.max_memory_allocated() / (1024**3)
-                )
+                peak_memory = max(peak_memory, torch.cuda.max_memory_allocated() / (1024**3))
 
             # Power and temp via nvidia-smi
             try:
                 result = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=power.draw,temperature.gpu",
-                     "--format=csv,noheader,nounits"],
-                    capture_output=True, text=True, timeout=2
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=power.draw,temperature.gpu",
+                        "--format=csv,noheader,nounits",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
                 )
                 if result.returncode == 0:
                     parts = result.stdout.strip().split(",")
@@ -614,18 +612,22 @@ def run_calibration(
         avg_time = total_time / test_iterations
         throughput = batch_size / avg_time
         memory_percent = (peak_memory / hw.vram_total_gb * 100) if hw.vram_total_gb > 0 else 0
-        power_percent = (peak_power / hw.power_default_watts * 100) if hw.power_default_watts > 0 else 0
+        power_percent = (
+            (peak_power / hw.power_default_watts * 100) if hw.power_default_watts > 0 else 0
+        )
 
-        results.append({
-            "batch_size": batch_size,
-            "throughput": throughput,
-            "peak_memory_gb": peak_memory,
-            "memory_percent": memory_percent,
-            "peak_power_watts": peak_power,
-            "power_percent": power_percent,
-            "peak_temp_c": peak_temp,
-            "avg_time_ms": avg_time * 1000,
-        })
+        results.append(
+            {
+                "batch_size": batch_size,
+                "throughput": throughput,
+                "peak_memory_gb": peak_memory,
+                "memory_percent": memory_percent,
+                "peak_power_watts": peak_power,
+                "power_percent": power_percent,
+                "peak_temp_c": peak_temp,
+                "avg_time_ms": avg_time * 1000,
+            }
+        )
 
         logger.info(
             f"  Batch {batch_size}: {throughput:.1f} items/s, "
@@ -636,15 +638,16 @@ def run_calibration(
 
         # Stop if we exceed targets significantly
         if memory_percent > target_memory_percent * 1.2:
-            logger.info(f"  Stopping: exceeded memory target")
+            logger.info("  Stopping: exceeded memory target")
             break
         if power_percent > target_power_percent * 1.2:
-            logger.info(f"  Stopping: exceeded power target")
+            logger.info("  Stopping: exceeded power target")
             break
 
     # Find optimal batch size (highest throughput within targets)
     valid_results = [
-        r for r in results
+        r
+        for r in results
         if r["memory_percent"] <= target_memory_percent
         and r["power_percent"] <= target_power_percent
     ]
@@ -660,10 +663,12 @@ def run_calibration(
     recommended_power = None
     if hw.power_default_watts > 0:
         # Set power limit to observed peak + 10% headroom, capped at target
-        recommended_power = int(min(
-            optimal["peak_power_watts"] * 1.1,
-            hw.power_default_watts * (target_power_percent / 100.0)
-        ))
+        recommended_power = int(
+            min(
+                optimal["peak_power_watts"] * 1.1,
+                hw.power_default_watts * (target_power_percent / 100.0),
+            )
+        )
 
     # Build recommended settings
     settings = calculate_optimal_settings(
@@ -686,7 +691,7 @@ def run_calibration(
     )
 
 
-def print_hardware_report():
+def print_hardware_report() -> None:
     """Print a detailed hardware report."""
     hw = detect_hardware()
 
@@ -699,14 +704,16 @@ def print_hardware_report():
 
     if hw.gpu_available:
         print(f"\nGPU: {hw.gpu_name}")
-        print(f"  Compute Capability: {hw.gpu_compute_capability[0]}.{hw.gpu_compute_capability[1]}")
+        print(
+            f"  Compute Capability: {hw.gpu_compute_capability[0]}.{hw.gpu_compute_capability[1]}"
+        )
         print(f"  VRAM: {hw.vram_total_gb:.1f} GB total, {hw.vram_free_gb:.1f} GB free")
         print(f"  FP16 Support: {'Yes' if hw.supports_fp16 else 'No'}")
         print(f"  BF16 Support: {'Yes' if hw.supports_bf16 else 'No'}")
         print(f"  TF32 Support: {'Yes' if hw.supports_tf32 else 'No'}")
 
         if hw.power_default_watts > 0:
-            print(f"\nPower:")
+            print("\nPower:")
             print(f"  Current Limit: {hw.power_limit_watts:.0f}W")
             print(f"  Default Limit: {hw.power_default_watts:.0f}W")
             print(f"  Maximum Limit: {hw.power_max_watts:.0f}W")
@@ -720,8 +727,8 @@ def print_optimization_report(
     model_name: str,
     vram_budget_percent: float = 70.0,
     power_budget_percent: float = 75.0,
-    stability_priority: str = "balanced",
-):
+    stability_priority: Literal["performance", "balanced", "stable"] = "balanced",
+) -> None:
     """Print optimization recommendations for a model."""
     settings = calculate_optimal_settings(
         model_name=model_name,
@@ -734,31 +741,36 @@ def print_optimization_report(
     print(f"OPTIMIZATION REPORT: {model_name}")
     print("=" * 70)
 
-    print(f"\nTarget Budgets:")
+    print("\nTarget Budgets:")
     print(f"  VRAM: {vram_budget_percent:.0f}%")
     print(f"  Power: {power_budget_percent:.0f}%")
     print(f"  Priority: {stability_priority}")
 
-    print(f"\nRecommended Settings:")
+    print("\nRecommended Settings:")
     print(f"  Device: {settings.device}")
     print(f"  Precision: {settings.precision}")
     print(f"  Batch Size: {settings.batch_size}")
     print(f"  Min Batch Size: {settings.min_batch_size}")
-    print(f"  Power Limit: {settings.power_limit_watts}W" if settings.power_limit_watts else "  Power Limit: Not set")
+    print(
+        f"  Power Limit: {settings.power_limit_watts}W"
+        if settings.power_limit_watts
+        else "  Power Limit: Not set"
+    )
     print(f"  GPU Warmup: {settings.enable_gpu_warmup}")
     print(f"  Max Memory: {settings.max_memory_percent:.0f}%")
     print(f"  Max Temperature: {settings.max_temperature_c:.0f}C")
     print(f"  Inter-batch Delay: {settings.inter_batch_delay}s")
 
     if settings.optimization_notes:
-        print(f"\nNotes:")
+        print("\nNotes:")
         for note in settings.optimization_notes:
             print(f"  * {note}")
 
     print("\n" + "-" * 70)
     print("Config YAML settings:")
     print("-" * 70)
-    print(f"""
+    print(
+        f"""
 embedding_model: {model_name}
 device: {settings.device}
 embedding_batch_size: {settings.batch_size}
@@ -773,9 +785,10 @@ gpu_adaptive_batch_size: {settings.adaptive_batch_size}
 gpu_min_batch_size: {settings.min_batch_size}
 
 # GPU Power Management
-gpu_power_limit_watts: {settings.power_limit_watts if settings.power_limit_watts else 'null'}
+gpu_power_limit_watts: {settings.power_limit_watts if settings.power_limit_watts else "null"}
 enable_gpu_warmup: {str(settings.enable_gpu_warmup).lower()}
-""")
+"""
+    )
     print("=" * 70 + "\n")
 
 
@@ -792,12 +805,14 @@ if __name__ == "__main__":
         vram = float(args[2]) if len(args) > 2 else 70.0
         power = float(args[3]) if len(args) > 3 else 75.0
         priority = args[4] if len(args) > 4 else "balanced"
-        print_optimization_report(model, vram, power, priority)
+        # Cast to Literal type for mypy
+        stability = priority if priority in ("performance", "balanced", "stable") else "balanced"
+        print_optimization_report(model, vram, power, stability)  # type: ignore[arg-type]
 
     elif args[0] == "calibrate":
         model = args[1] if len(args) > 1 else "BAAI/bge-large-en-v1.5"
         result = run_calibration(model)
-        print(f"\nCalibration complete!")
+        print("\nCalibration complete!")
         print(f"  Optimal batch size: {result.optimal_batch_size}")
         print(f"  Optimal power limit: {result.optimal_power_limit}W")
         print(f"  Throughput: {result.throughput_items_per_sec:.1f} items/s")
@@ -807,5 +822,7 @@ if __name__ == "__main__":
     else:
         print("Usage:")
         print("  python -m rag_service.core.gpu_optimizer hardware")
-        print("  python -m rag_service.core.gpu_optimizer optimize [model] [vram%] [power%] [priority]")
+        print(
+            "  python -m rag_service.core.gpu_optimizer optimize [model] [vram%] [power%] [priority]"
+        )
         print("  python -m rag_service.core.gpu_optimizer calibrate [model]")

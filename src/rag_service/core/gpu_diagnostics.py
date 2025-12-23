@@ -13,6 +13,7 @@ Key diagnostics captured:
 7. Throttling reasons - Thermal, power, or other throttling indicators
 """
 
+import contextlib
 import datetime
 import os
 import sys
@@ -169,11 +170,15 @@ class GPUDiagnostics:
 
         # ECC errors
         if self.has_ecc_errors:
-            lines.append(f"    GPU_ECC_ERR: single={self.ecc_errors_single}, double={self.ecc_errors_double}")
+            lines.append(
+                f"    GPU_ECC_ERR: single={self.ecc_errors_single}, double={self.ecc_errors_double}"
+            )
 
         # Performance state
         if self.performance_state:
-            lines.append(f"    GPU_PSTATE: {self.performance_state} | UTIL: {self.gpu_utilization}%")
+            lines.append(
+                f"    GPU_PSTATE: {self.performance_state} | UTIL: {self.gpu_utilization}%"
+            )
 
         # CUDA errors
         if self.cuda_last_error:
@@ -221,9 +226,7 @@ def collect_gpu_diagnostics() -> GPUDiagnostics | None:
     Returns:
         GPUDiagnostics object with all available information, or None if no GPU.
     """
-    diag = GPUDiagnostics(
-        timestamp=datetime.datetime.now().isoformat(timespec="milliseconds")
-    )
+    diag = GPUDiagnostics(timestamp=datetime.datetime.now().isoformat(timespec="milliseconds"))
 
     # Get PyTorch CUDA info
     try:
@@ -255,8 +258,8 @@ def collect_gpu_diagnostics() -> GPUDiagnostics | None:
             diag.cuda_last_error = str(e)
 
         # cuDNN version
-        if torch.backends.cudnn.is_available():
-            diag.cudnn_version = str(torch.backends.cudnn.version())
+        if torch.backends.cudnn.is_available():  # type: ignore[no-untyped-call]
+            diag.cudnn_version = str(torch.backends.cudnn.version())  # type: ignore[no-untyped-call]
 
     except ImportError:
         return None
@@ -284,10 +287,8 @@ def collect_gpu_diagnostics() -> GPUDiagnostics | None:
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
 
         # UUID
-        try:
+        with contextlib.suppress(Exception):
             diag.gpu_uuid = pynvml.nvmlDeviceGetUUID(handle)
-        except Exception:
-            pass
 
         # Memory
         try:
@@ -300,75 +301,61 @@ def collect_gpu_diagnostics() -> GPUDiagnostics | None:
             pass
 
         # Temperature
-        try:
+        with contextlib.suppress(Exception):
             diag.temperature_c = float(
                 pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
             )
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             diag.temperature_slowdown_c = float(
                 pynvml.nvmlDeviceGetTemperatureThreshold(
                     handle, pynvml.NVML_TEMPERATURE_THRESHOLD_SLOWDOWN
                 )
             )
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             diag.temperature_shutdown_c = float(
                 pynvml.nvmlDeviceGetTemperatureThreshold(
                     handle, pynvml.NVML_TEMPERATURE_THRESHOLD_SHUTDOWN
                 )
             )
-        except Exception:
-            pass
 
         # Power
-        try:
+        with contextlib.suppress(Exception):
             diag.power_draw_w = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             diag.power_limit_w = pynvml.nvmlDeviceGetPowerManagementLimit(handle) / 1000.0
-        except Exception:
-            pass
 
-        try:
-            diag.power_max_limit_w = pynvml.nvmlDeviceGetPowerManagementLimitConstraints(handle)[1] / 1000.0
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            diag.power_max_limit_w = (
+                pynvml.nvmlDeviceGetPowerManagementLimitConstraints(handle)[1] / 1000.0
+            )
 
         if diag.power_draw_w and diag.power_limit_w:
             diag.power_percent = (diag.power_draw_w / diag.power_limit_w) * 100
 
         # Clocks
-        try:
-            diag.clock_graphics_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS)
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            diag.clock_graphics_mhz = pynvml.nvmlDeviceGetClockInfo(
+                handle, pynvml.NVML_CLOCK_GRAPHICS
+            )
 
-        try:
+        with contextlib.suppress(Exception):
             diag.clock_sm_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_SM)
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             diag.clock_memory_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_MEM)
-        except Exception:
-            pass
 
-        try:
-            diag.clock_max_graphics_mhz = pynvml.nvmlDeviceGetMaxClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS)
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            diag.clock_max_graphics_mhz = pynvml.nvmlDeviceGetMaxClockInfo(
+                handle, pynvml.NVML_CLOCK_GRAPHICS
+            )
 
-        try:
-            diag.clock_max_memory_mhz = pynvml.nvmlDeviceGetMaxClockInfo(handle, pynvml.NVML_CLOCK_MEM)
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            diag.clock_max_memory_mhz = pynvml.nvmlDeviceGetMaxClockInfo(
+                handle, pynvml.NVML_CLOCK_MEM
+            )
 
         # Utilization
         try:
@@ -379,61 +366,49 @@ def collect_gpu_diagnostics() -> GPUDiagnostics | None:
             pass
 
         # PCIe
-        try:
+        with contextlib.suppress(Exception):
             diag.pcie_gen = pynvml.nvmlDeviceGetCurrPcieLinkGeneration(handle)
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             diag.pcie_max_gen = pynvml.nvmlDeviceGetMaxPcieLinkGeneration(handle)
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             diag.pcie_width = pynvml.nvmlDeviceGetCurrPcieLinkWidth(handle)
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             diag.pcie_max_width = pynvml.nvmlDeviceGetMaxPcieLinkWidth(handle)
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             diag.pcie_tx_throughput_kb = pynvml.nvmlDeviceGetPcieThroughput(
                 handle, pynvml.NVML_PCIE_UTIL_TX_BYTES
             )
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             diag.pcie_rx_throughput_kb = pynvml.nvmlDeviceGetPcieThroughput(
                 handle, pynvml.NVML_PCIE_UTIL_RX_BYTES
             )
-        except Exception:
-            pass
 
         # Throttling
         try:
             throttle_reasons = pynvml.nvmlDeviceGetCurrentClocksThrottleReasons(handle)
             diag.throttle_reasons = _decode_throttle_reasons(throttle_reasons)
-            diag.is_throttled = len(diag.throttle_reasons) > 0 and "IDLE" not in diag.throttle_reasons
+            diag.is_throttled = (
+                len(diag.throttle_reasons) > 0 and "IDLE" not in diag.throttle_reasons
+            )
         except Exception:
             pass
 
         # ECC errors
         try:
             diag.ecc_errors_single = pynvml.nvmlDeviceGetTotalEccErrors(
-                handle,
-                pynvml.NVML_SINGLE_BIT_ECC,
-                pynvml.NVML_VOLATILE_ECC
+                handle, pynvml.NVML_SINGLE_BIT_ECC, pynvml.NVML_VOLATILE_ECC
             )
             diag.ecc_errors_double = pynvml.nvmlDeviceGetTotalEccErrors(
-                handle,
-                pynvml.NVML_DOUBLE_BIT_ECC,
-                pynvml.NVML_VOLATILE_ECC
+                handle, pynvml.NVML_DOUBLE_BIT_ECC, pynvml.NVML_VOLATILE_ECC
             )
-            diag.has_ecc_errors = (diag.ecc_errors_single or 0) > 0 or (diag.ecc_errors_double or 0) > 0
+            diag.has_ecc_errors = (diag.ecc_errors_single or 0) > 0 or (
+                diag.ecc_errors_double or 0
+            ) > 0
         except pynvml.NVMLError:
             # ECC not supported on all GPUs
             pass
@@ -448,10 +423,8 @@ def collect_gpu_diagnostics() -> GPUDiagnostics | None:
             pass
 
         # Fan
-        try:
+        with contextlib.suppress(Exception):
             diag.fan_speed_percent = pynvml.nvmlDeviceGetFanSpeed(handle)
-        except Exception:
-            pass
 
         pynvml.nvmlShutdown()
 
@@ -489,7 +462,7 @@ class DiagnosticCrashLogger:
             log_dir.mkdir(parents=True, exist_ok=True)
             date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             self._log_path = log_dir / f"{log_name}_{date_str}.log"
-            self._file = open(self._log_path, "a", encoding="utf-8", buffering=1)
+            self._file = open(self._log_path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
             self._write_header()
         except Exception as e:
             print(f"WARNING: Could not create diagnostic log: {e}", file=sys.stderr)
@@ -515,29 +488,39 @@ class DiagnosticCrashLogger:
         # Collect initial diagnostics
         diag = collect_gpu_diagnostics()
         if diag:
-            lines.extend([
-                "GPU INFO:",
-                f"  Name: {diag.gpu_name}",
-                f"  UUID: {diag.gpu_uuid}",
-                f"  Driver: {diag.driver_version}",
-                f"  CUDA: {diag.cuda_version}",
-                f"  PyTorch CUDA: {diag.pytorch_cuda_version}",
-                f"  cuDNN: {diag.cudnn_version}",
-                f"  Memory: {diag.memory_total_gb:.1f} GB",
-                f"  Power Limit: {diag.power_limit_w:.0f}W (max: {diag.power_max_limit_w:.0f}W)" if diag.power_limit_w else "",
-                f"  Temp Thresholds: slowdown={diag.temperature_slowdown_c}°C, shutdown={diag.temperature_shutdown_c}°C" if diag.temperature_slowdown_c else "",
-                f"  PCIe: Gen{diag.pcie_max_gen} x{diag.pcie_max_width}" if diag.pcie_max_gen else "",
-                "",
-            ])
+            lines.extend(
+                [
+                    "GPU INFO:",
+                    f"  Name: {diag.gpu_name}",
+                    f"  UUID: {diag.gpu_uuid}",
+                    f"  Driver: {diag.driver_version}",
+                    f"  CUDA: {diag.cuda_version}",
+                    f"  PyTorch CUDA: {diag.pytorch_cuda_version}",
+                    f"  cuDNN: {diag.cudnn_version}",
+                    f"  Memory: {diag.memory_total_gb:.1f} GB",
+                    f"  Power Limit: {diag.power_limit_w:.0f}W (max: {diag.power_max_limit_w:.0f}W)"
+                    if diag.power_limit_w
+                    else "",
+                    f"  Temp Thresholds: slowdown={diag.temperature_slowdown_c}°C, shutdown={diag.temperature_shutdown_c}°C"
+                    if diag.temperature_slowdown_c
+                    else "",
+                    f"  PCIe: Gen{diag.pcie_max_gen} x{diag.pcie_max_width}"
+                    if diag.pcie_max_gen
+                    else "",
+                    "",
+                ]
+            )
         else:
             lines.append("GPU INFO: No CUDA GPU available\n")
 
-        lines.extend([
-            "=" * 100,
-            "LOG FORMAT: [timestamp] [op_id] [event] message",
-            "=" * 100,
-            "",
-        ])
+        lines.extend(
+            [
+                "=" * 100,
+                "LOG FORMAT: [timestamp] [op_id] [event] message",
+                "=" * 100,
+                "",
+            ]
+        )
 
         for line in lines:
             if line:  # Skip empty strings from failed conditionals
@@ -548,12 +531,12 @@ class DiagnosticCrashLogger:
         """Flush and sync to disk."""
         if self._file:
             self._file.flush()
-            try:
+            with contextlib.suppress(Exception):
                 os.fsync(self._file.fileno())
-            except Exception:
-                pass
 
-    def _write(self, event: str, message: str, include_diag: bool = False, verbose: bool = False) -> None:
+    def _write(
+        self, event: str, message: str, include_diag: bool = False, verbose: bool = False
+    ) -> None:
         """Write a log entry."""
         if not self._enabled or not self._file:
             return
@@ -578,7 +561,9 @@ class DiagnosticCrashLogger:
         """Log start of an operation and return operation ID."""
         self._operation_id += 1
         ctx_str = " | ".join(f"{k}={v}" for k, v in context.items()) if context else ""
-        self._write("OP_START", f"{name} | {ctx_str}" if ctx_str else name, include_diag=True, verbose=True)
+        self._write(
+            "OP_START", f"{name} | {ctx_str}" if ctx_str else name, include_diag=True, verbose=True
+        )
         return self._operation_id
 
     def checkpoint(self, label: str, **context: Any) -> None:
@@ -604,19 +589,23 @@ class DiagnosticCrashLogger:
     def log_pre_cuda_op(self, op_name: str, **context: Any) -> None:
         """Log immediately before a CUDA operation - this is the last line before potential crash."""
         ctx_str = " | ".join(f"{k}={v}" for k, v in context.items()) if context else ""
-        self._write("PRE_CUDA_OP", f">>> {op_name} | {ctx_str}" if ctx_str else f">>> {op_name}", include_diag=True)
+        self._write(
+            "PRE_CUDA_OP",
+            f">>> {op_name} | {ctx_str}" if ctx_str else f">>> {op_name}",
+            include_diag=True,
+        )
 
         # Extra sync to ensure this line survives
         if self._file:
             self._file.flush()
-            try:
+            with contextlib.suppress(Exception):
                 os.fsync(self._file.fileno())
-            except Exception:
-                pass
 
     def log_post_cuda_op(self, op_name: str, duration_ms: float = 0) -> None:
         """Log immediately after a CUDA operation completes."""
-        self._write("POST_CUDA_OP", f"<<< {op_name} | duration={duration_ms:.1f}ms", include_diag=True)
+        self._write(
+            "POST_CUDA_OP", f"<<< {op_name} | duration={duration_ms:.1f}ms", include_diag=True
+        )
 
     def close(self) -> None:
         """Close the log file."""
@@ -666,7 +655,9 @@ def dump_diagnostics() -> str:
     ]
 
     if diag.power_draw_w:
-        lines.append(f"Power: {diag.power_draw_w:.1f}W/{diag.power_limit_w:.0f}W ({diag.power_percent:.1f}%)")
+        lines.append(
+            f"Power: {diag.power_draw_w:.1f}W/{diag.power_limit_w:.0f}W ({diag.power_percent:.1f}%)"
+        )
 
     if diag.temperature_c:
         lines.append(f"Temp: {diag.temperature_c:.0f}°C")

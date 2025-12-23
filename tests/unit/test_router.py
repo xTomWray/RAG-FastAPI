@@ -26,7 +26,10 @@ class TestQueryRouter:
 
         for query in semantic_queries:
             result = router.classify(query)
-            assert result in ("vector", "hybrid"), f"'{query}' should be vector or hybrid, got {result}"
+            assert result in (
+                "vector",
+                "hybrid",
+            ), f"'{query}' should be vector or hybrid, got {result}"
 
     def test_relational_query_classification(self, router: QueryRouter) -> None:
         """Test that relational queries are classified correctly."""
@@ -41,7 +44,10 @@ class TestQueryRouter:
 
         for query in relational_queries:
             result = router.classify(query)
-            assert result in ("graph", "hybrid"), f"'{query}' should be graph or hybrid, got {result}"
+            assert result in (
+                "graph",
+                "hybrid",
+            ), f"'{query}' should be graph or hybrid, got {result}"
 
     def test_hybrid_query_classification(self, router: QueryRouter) -> None:
         """Test that complex queries are classified as hybrid."""
@@ -123,4 +129,3 @@ class TestQueryRouter:
         for query in queries:
             result = router.classify(query)
             assert result in ("graph", "hybrid"), f"'{query}' should involve graph"
-

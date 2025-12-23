@@ -78,9 +78,7 @@ class HybridQueryResponse(BaseModel):
     query: str = Field(description="The original query")
     collection: str = Field(description="Collection searched")
     strategy_used: str = Field(description="Strategy that was used")
-    router_reasoning: str | None = Field(
-        default=None, description="Why this strategy was chosen"
-    )
+    router_reasoning: str | None = Field(default=None, description="Why this strategy was chosen")
 
 
 def estimate_tokens(text: str) -> int:
@@ -97,7 +95,7 @@ def estimate_tokens(text: str) -> int:
     return len(text) // 4
 
 
-def _extract_entity_mentions(query: str, graph_store, collection: str) -> list[str]:
+def _extract_entity_mentions(query: str, graph_store: Any, collection: str) -> list[str]:
     """Extract potential entity names mentioned in the query.
 
     Args:
@@ -142,7 +140,7 @@ def _perform_vector_search(
 
     Returns:
         List of search results.
-    
+
     Raises:
         CollectionNotFoundError: If collection doesn't exist.
     """
@@ -233,7 +231,7 @@ def _perform_graph_search(
                         )
 
                 # Get relationships from this entity
-                relationships = graph_store.query_relationships_from(
+                relationships = graph_store.query_relationships_from(  # type: ignore[union-attr]
                     entity_name=entity_name,
                     collection=collection,
                 )
@@ -283,8 +281,6 @@ async def query_documents(request: QueryRequest) -> QueryResponse:
     Raises:
         HTTPException: If collection not found or query fails.
     """
-    settings = get_settings()
-
     try:
         chunks = _perform_vector_search(
             question=request.question,
@@ -343,8 +339,8 @@ async def hybrid_query(request: HybridQueryRequest) -> HybridQueryResponse:
         if request.strategy == "auto":
             query_router = get_query_router()
             explanation = query_router.get_strategy_explanation(request.question)
-            strategy = explanation["strategy"]
-            reasoning = explanation["reasoning"]
+            strategy = str(explanation["strategy"])
+            reasoning = str(explanation["reasoning"])
         else:
             strategy = request.strategy
             reasoning = f"Explicitly requested: {request.strategy}"
@@ -376,8 +372,7 @@ async def hybrid_query(request: HybridQueryRequest) -> HybridQueryResponse:
         # Estimate tokens from both sources
         vector_text = " ".join(c.text for c in chunks)
         graph_text = " ".join(
-            f"{g.entity} {g.relationship or ''} {g.connected_to or ''}"
-            for g in graph_context
+            f"{g.entity} {g.relationship or ''} {g.connected_to or ''}" for g in graph_context
         )
         token_estimate = estimate_tokens(vector_text + " " + graph_text)
 

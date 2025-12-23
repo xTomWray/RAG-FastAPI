@@ -65,22 +65,20 @@ class Neo4jGraphStore:
         self._database = database
         self._driver = None
 
-    def _get_driver(self):
+    def _get_driver(self) -> Any:
         """Lazy initialization of Neo4j driver."""
         if self._driver is None:
             try:
                 from neo4j import GraphDatabase
 
-                self._driver = GraphDatabase.driver(
-                    self._uri, auth=(self._user, self._password)
-                )
+                driver = GraphDatabase.driver(self._uri, auth=(self._user, self._password))
                 # Verify connectivity
-                self._driver.verify_connectivity()
+                driver.verify_connectivity()
+                self._driver = driver
                 logger.info(f"Connected to Neo4j at {self._uri}")
             except ImportError:
                 raise ImportError(
-                    "neo4j package is required for graph store. "
-                    "Install with: pip install neo4j"
+                    "neo4j package is required for graph store. Install with: pip install neo4j"
                 )
             except Exception as e:
                 logger.warning(f"Could not connect to Neo4j: {e}")
@@ -238,7 +236,7 @@ class Neo4jGraphStore:
         MATCH (start {{name: $name, collection: $collection}})
         MATCH path = (start){pattern}(end)
         WHERE end.collection = $collection
-        RETURN DISTINCT 
+        RETURN DISTINCT
             end.name as entity_name,
             labels(end)[0] as entity_type,
             properties(end) as properties,
@@ -247,9 +245,9 @@ class Neo4jGraphStore:
         LIMIT 100
         """
 
-        entities = []
-        relationships = []
-        paths = []
+        entities: list[Entity] = []
+        relationships: list[Relationship] = []
+        paths: list[list[str]] = []
         raw_results = []
 
         with driver.session(database=self._database) as session:
@@ -306,7 +304,7 @@ class Neo4jGraphStore:
             (start {{name: $start, collection: $collection}})-[*1..{max_hops}]-
             (end {{name: $end, collection: $collection}})
         )
-        RETURN 
+        RETURN
             [node in nodes(path) | node.name] as path_nodes,
             [node in nodes(path) | labels(node)[0]] as path_types,
             [rel in relationships(path) | type(rel)] as rel_types
@@ -317,9 +315,7 @@ class Neo4jGraphStore:
         raw_results = []
 
         with driver.session(database=self._database) as session:
-            result = session.run(
-                query, start=start_entity, end=end_entity, collection=collection
-            )
+            result = session.run(query, start=start_entity, end=end_entity, collection=collection)
 
             for record in result:
                 raw_results.append(dict(record))
@@ -465,7 +461,12 @@ class Neo4jGraphStore:
         RETURN type(r) as type, count(r) as count
         """
 
-        stats = {"nodes": {}, "relationships": {}, "total_nodes": 0, "total_relationships": 0}
+        stats: dict[str, Any] = {
+            "nodes": {},
+            "relationships": {},
+            "total_nodes": 0,
+            "total_relationships": 0,
+        }
 
         with driver.session(database=self._database) as session:
             # Count nodes by type
@@ -526,7 +527,7 @@ class InMemoryGraphStore:
                 "Install with: pip install networkx"
             )
 
-    def _get_graph(self, collection: str) -> "nx.DiGraph":
+    def _get_graph(self, collection: str) -> Any:  # Returns nx.DiGraph
         """Get or create a graph for a collection."""
         if collection not in self._graphs:
             self._graphs[collection] = self._nx.DiGraph()
@@ -591,7 +592,7 @@ class InMemoryGraphStore:
         entities = []
         paths = []
 
-        for hop in range(hops):
+        for _hop in range(hops):
             next_level = set()
             for node in current_level:
                 # Get neighbors based on direction
@@ -635,7 +636,7 @@ class InMemoryGraphStore:
         start_entity: str,
         end_entity: str,
         collection: str = "default",
-        max_hops: int = 5,
+        _max_hops: int = 5,  # Kept for API compatibility
     ) -> GraphSearchResult:
         """Find paths between two entities."""
         graph = self._get_graph(collection)
@@ -645,9 +646,7 @@ class InMemoryGraphStore:
 
         try:
             # Find shortest path
-            path = self._nx.shortest_path(
-                graph, start_entity, end_entity, weight=None
-            )
+            path = self._nx.shortest_path(graph, start_entity, end_entity, weight=None)
             return GraphSearchResult(
                 entities=[],
                 relationships=[],
@@ -674,9 +673,7 @@ class InMemoryGraphStore:
                         name=node,
                         entity_type=entity_type,
                         properties={
-                            k: v
-                            for k, v in data.items()
-                            if k not in ("entity_type", "source")
+                            k: v for k, v in data.items() if k not in ("entity_type", "source")
                         },
                         source=data.get("source"),
                     )
@@ -689,7 +686,7 @@ class InMemoryGraphStore:
     def delete_collection(self, collection: str) -> int:
         """Delete all entities in a collection."""
         if collection in self._graphs:
-            count = self._graphs[collection].number_of_nodes()
+            count = int(self._graphs[collection].number_of_nodes())
             del self._graphs[collection]
             return count
         return 0
@@ -701,11 +698,11 @@ class InMemoryGraphStore:
         node_types: dict[str, int] = {}
         rel_types: dict[str, int] = {}
 
-        for node, data in graph.nodes(data=True):
+        for _node, data in graph.nodes(data=True):
             t = data.get("entity_type", "Unknown")
             node_types[t] = node_types.get(t, 0) + 1
 
-        for u, v, data in graph.edges(data=True):
+        for _u, _v, data in graph.edges(data=True):
             t = data.get("relationship_type", "Unknown")
             rel_types[t] = rel_types.get(t, 0) + 1
 
@@ -749,4 +746,3 @@ def create_graph_store(
         return InMemoryGraphStore()
 
     return store
-

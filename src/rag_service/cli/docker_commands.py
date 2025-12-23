@@ -38,15 +38,9 @@ def _run_docker_command(args: list[str]) -> int:
 
 @app.command("docker-build")
 def docker_build(
-    gpu: bool = typer.Option(
-        False, "--gpu", "-g", help="Build GPU-enabled image (CUDA)."
-    ),
-    tag: str = typer.Option(
-        "latest", "--tag", "-t", help="Image tag."
-    ),
-    no_cache: bool = typer.Option(
-        False, "--no-cache", help="Build without using cache."
-    ),
+    gpu: bool = typer.Option(False, "--gpu", "-g", help="Build GPU-enabled image (CUDA)."),
+    tag: str = typer.Option("latest", "--tag", "-t", help="Image tag."),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Build without using cache."),
 ) -> None:
     """Build Docker image for the RAG service.
 
@@ -69,8 +63,10 @@ def docker_build(
 
     args = [
         "build",
-        "--target", target,
-        "-t", full_tag,
+        "--target",
+        target,
+        "-t",
+        full_tag,
         ".",
     ]
 
@@ -87,21 +83,11 @@ def docker_build(
 
 @app.command("docker-run")
 def docker_run(
-    gpu: bool = typer.Option(
-        False, "--gpu", "-g", help="Run GPU-enabled image."
-    ),
-    tag: str = typer.Option(
-        "latest", "--tag", "-t", help="Image tag to run."
-    ),
-    port: int = typer.Option(
-        8080, "--port", "-p", help="Host port to bind."
-    ),
-    detach: bool = typer.Option(
-        False, "--detach", "-d", help="Run in background."
-    ),
-    name: str = typer.Option(
-        "rag-service", "--name", "-n", help="Container name."
-    ),
+    gpu: bool = typer.Option(False, "--gpu", "-g", help="Run GPU-enabled image."),
+    tag: str = typer.Option("latest", "--tag", "-t", help="Image tag to run."),
+    port: int = typer.Option(8080, "--port", "-p", help="Host port to bind."),
+    detach: bool = typer.Option(False, "--detach", "-d", help="Run in background."),
+    name: str = typer.Option("rag-service", "--name", "-n", help="Container name."),
 ) -> None:
     """Run the RAG service in a Docker container.
 
@@ -123,9 +109,12 @@ def docker_run(
     args = [
         "run",
         "--rm",
-        "-p", f"{port}:8080",
-        "-v", "rag-data:/app/data",
-        "--name", name,
+        "-p",
+        f"{port}:8080",
+        "-v",
+        "rag-data:/app/data",
+        "--name",
+        name,
     ]
 
     if detach:

@@ -4,6 +4,7 @@ Provides a simple drag-and-drop interface for document ingestion and
 semantic search queries with hybrid vector/graph retrieval support.
 """
 
+import contextlib
 import json
 import logging
 import os
@@ -21,7 +22,7 @@ DEFAULT_API_URL = "http://localhost:8080"
 DEFAULT_UI_PORT = 7860
 
 # Global state for accumulated files (used across Gradio callbacks)
-accumulated_files: list = []
+accumulated_files: list[Any] = []
 
 
 def get_field_constraints(field_name: str) -> dict[str, Any]:
@@ -60,7 +61,11 @@ def get_field_constraints(field_name: str) -> dict[str, Any]:
 
     # Extract choices from Literal type annotation
     annotation = field_info.annotation
-    if hasattr(annotation, "__origin__") and annotation.__origin__ is type(None):
+    if (
+        annotation is not None
+        and hasattr(annotation, "__origin__")
+        and annotation.__origin__ is type(None)
+    ):
         # Handle Optional types
         pass
     else:
@@ -142,14 +147,16 @@ CONFIG_SCHEMA = {
 
 def escape_html(text: str) -> str:
     """Escape HTML special characters in text.
-    
+
     Args:
         text: The text to escape.
-        
+
     Returns:
         HTML-escaped text.
     """
-    return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+    return (
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    )
 
 
 def find_available_port(start_port: int = 7860, max_attempts: int = 100) -> int:
@@ -191,8 +198,7 @@ def check_api_health(api_url: str) -> tuple[bool, str]:
             return True, "✅ API is running"
         return False, f"⚠️ API returned status {response.status_code}"
     except httpx.ConnectError:
-        return False, "❌ Cannot connect to API. Start it with: 
-    python -m rag_service"
+        return False, "❌ Cannot connect to API. Start it with: python -m rag_service"
     except Exception as e:
         return False, f"❌ Error: {str(e)}"
 
@@ -208,14 +214,14 @@ def get_system_info(api_url: str) -> dict[str, Any]:
     """
     try:
         response = httpx.get(f"{api_url}/info", timeout=5.0)
-        return response.json()
+        return dict(response.json())
     except Exception as e:
         return {"error": str(e)}
 
 
 def load_current_config() -> dict[str, Any]:
     """Load current configuration from config.yaml and settings."""
-    from rag_service.config import get_settings, get_config_file_path
+    from rag_service.config import get_config_file_path, get_settings
 
     try:
         settings = get_settings()
@@ -270,7 +276,7 @@ def save_config_to_yaml(config: dict[str, Any]) -> str:
     Returns:
         Status message.
     """
-    from rag_service.config import save_yaml_config, get_settings, get_config_file_path
+    from rag_service.config import get_settings, save_yaml_config
 
     try:
         # Get current full settings and update with new values
@@ -279,13 +285,31 @@ def save_config_to_yaml(config: dict[str, Any]) -> str:
 
         # All UI-editable fields
         ui_fields = [
-            "embedding_model", "device", "embedding_batch_size",
-            "chunk_size", "chunk_overlap", "pdf_strategy",
-            "vector_store_backend", "faiss_index_dir", "chroma_persist_dir", "default_collection",
-            "host", "port", "api_prefix", "log_level",
-            "enable_graph_rag", "graph_store_backend", "neo4j_uri", "neo4j_user", "neo4j_database",
-            "router_mode", "default_query_strategy", "default_top_k",
-            "entity_extraction_mode", "entity_extraction_domain", "ollama_model",
+            "embedding_model",
+            "device",
+            "embedding_batch_size",
+            "chunk_size",
+            "chunk_overlap",
+            "pdf_strategy",
+            "vector_store_backend",
+            "faiss_index_dir",
+            "chroma_persist_dir",
+            "default_collection",
+            "host",
+            "port",
+            "api_prefix",
+            "log_level",
+            "enable_graph_rag",
+            "graph_store_backend",
+            "neo4j_uri",
+            "neo4j_user",
+            "neo4j_database",
+            "router_mode",
+            "default_query_strategy",
+            "default_top_k",
+            "entity_extraction_mode",
+            "entity_extraction_domain",
+            "ollama_model",
         ]
 
         for field in ui_fields:
@@ -344,11 +368,12 @@ def apply_and_restart(config: dict[str, Any]) -> str:
 
         # Step 2: Get the current service's port from config
         from rag_service.config import get_settings
+
         settings = get_settings()
         port = config.get("port", settings.port)
 
         # Step 3: Schedule restart after response is sent
-        def delayed_restart():
+        def delayed_restart() -> None:
             time.sleep(1.0)  # Brief wait for response to be sent
             logger.info("Initiating in-place service restart (exit code 42)...")
             # Exit with restart code - the wrapper loop will restart us
@@ -369,7 +394,7 @@ def apply_and_restart(config: dict[str, Any]) -> str:
         return f"❌ Error: {e}"
 
 
-def get_config_display() -> tuple:
+def get_config_display() -> tuple[Any, ...]:
     """Get current config values for UI display.
 
     Returns:
@@ -412,7 +437,7 @@ def get_config_display() -> tuple:
     )
 
 
-def format_file_list_html(files: list) -> str:
+def format_file_list_html(files: list[Any]) -> str:
     """Format a list of files for HTML display with scrolling.
 
     Args:
@@ -436,7 +461,7 @@ def format_file_list_html(files: list) -> str:
     return f'<div class="file-list-container">{content}</div>'
 
 
-def merge_files_and_return_list(new_files: list) -> list:
+def merge_files_and_return_list(new_files: list[Any]) -> list[Any]:
     """Add new files to the accumulated list, avoiding duplicates.
 
     Args:
@@ -448,7 +473,7 @@ def merge_files_and_return_list(new_files: list) -> list:
     global accumulated_files
 
     if not new_files:
-        return accumulated_files if accumulated_files else None
+        return accumulated_files
 
     # Convert existing files to paths for comparison
     existing_paths = set()
@@ -463,7 +488,7 @@ def merge_files_and_return_list(new_files: list) -> list:
             accumulated_files.append(new_file)
             existing_paths.add(file_path)
 
-    return accumulated_files if accumulated_files else None
+    return accumulated_files
 
 
 def clear_file_queue() -> None:
@@ -503,7 +528,7 @@ def safe_list_collections(api_url: str) -> tuple[str, str]:
         return error_msg, f"❌ Error: {str(e)}"
 
 
-def safe_get_system_info(api_url: str) -> tuple[dict, str]:
+def safe_get_system_info(api_url: str) -> tuple[dict[str, Any], str]:
     """Safe wrapper for get_system_info with error handling.
 
     Args:
@@ -521,10 +546,10 @@ def safe_get_system_info(api_url: str) -> tuple[dict, str]:
 
 
 def ingest_files(
-    files: list,
+    files: list[Any],
     collection: str,
     api_url: str,
-) -> tuple[str]:
+) -> tuple[str, ...]:
     """Ingest uploaded files into the RAG service.
 
     This function copies files to a stable location before processing to avoid
@@ -545,7 +570,7 @@ def ingest_files(
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     if not files:
-        return ("⚠️ No files selected", [], "**No files selected**")
+        return ("⚠️ No files selected", "")
 
     if not collection.strip():
         collection = "documents"
@@ -637,10 +662,8 @@ def ingest_files(
 
     finally:
         # Step 3: Clean up stable temp directory
-        try:
+        with contextlib.suppress(Exception):
             shutil.rmtree(stable_dir, ignore_errors=True)
-        except Exception:
-            pass  # Best effort cleanup
 
     # Build summary
     total_files = len(files)
@@ -651,7 +674,7 @@ def ingest_files(
     global accumulated_files
     accumulated_files.clear()
 
-    return (status_message,)
+    return (status_message, "")
 
 
 def ingest_directory(
@@ -836,7 +859,7 @@ def get_collection_choices(api_url: str) -> list[str]:
     return ["documents"]
 
 
-def refresh_collection_dropdown(api_url: str) -> dict:
+def refresh_collection_dropdown(api_url: str) -> dict[str, Any]:
     """Refresh collection dropdown choices.
 
     Args:
@@ -865,6 +888,15 @@ def list_collections(api_url: str) -> str:
             data = response.json()
             vector_cols = data.get("vector_collections", [])
             graph_cols = data.get("graph_collections", [])
+
+            vector_cols = sorted(
+                vector_cols,
+                key=lambda col: col.get("name", "").lower(),
+            )
+            graph_cols = sorted(
+                graph_cols,
+                key=lambda col: col.get("name", "").lower(),
+            )
 
             # Build markdown with proper formatting (double newlines for line breaks)
             parts = ["## 📦 Vector Collections\n"]
@@ -938,9 +970,10 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
     """
     # Load config for default values
     from rag_service.config import get_settings
+
     settings = get_settings()
     default_top_k = settings.default_top_k
-    
+
     # Note: Theme is set via app.theme after creation to avoid Gradio 6.0 deprecation warning
     # when using mount_gradio_app (which doesn't support launch() parameters)
     with gr.Blocks(
@@ -953,7 +986,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
             neutral_hue="slate",
             font=gr.themes.GoogleFont("Inter"),
         )
-        
+
         # Add custom CSS for file list scrolling (injected via HTML)
         gr.HTML(
             value="""
@@ -976,11 +1009,11 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
             """,
             visible=False,
         )
-        
+
         gr.Markdown(
             """
             # 📚 RAG Documentation Service
-            
+
             Upload documents, build a knowledge base, and search with hybrid vector + graph retrieval.
             """
         )
@@ -1001,7 +1034,18 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                         # Compact drop zone - just for receiving files
                         file_dropzone = gr.File(
                             file_count="multiple",
-                            file_types=[".pdf", ".md", ".txt", ".xml", ".html", ".docx", ".py", ".js", ".json", ".yaml"],
+                            file_types=[
+                                ".pdf",
+                                ".md",
+                                ".txt",
+                                ".xml",
+                                ".html",
+                                ".docx",
+                                ".py",
+                                ".js",
+                                ".json",
+                                ".yaml",
+                            ],
                             label="Drop files here (auto-adds to queue below)",
                             height=80,
                         )
@@ -1010,7 +1054,9 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                             value='<div class="file-list-container"><em>Queue empty - drop files above</em></div>',
                         )
                         with gr.Row():
-                            clear_queue_btn = gr.Button("🗑️ Clear Queue", variant="secondary", size="sm")
+                            clear_queue_btn = gr.Button(
+                                "🗑️ Clear Queue", variant="secondary", size="sm"
+                            )
                         with gr.Row():
                             upload_collection = gr.Dropdown(
                                 choices=["documents"],
@@ -1064,7 +1110,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                 )
 
                 # When files are dropped, add to queue and update display (don't touch dropzone)
-                def on_files_dropped(files):
+                def on_files_dropped(files: Any) -> tuple[str, None]:
                     """Handle newly dropped files and reset the dropzone value so users can drop again."""
                     if not files:
                         return format_file_list_html(accumulated_files), None
@@ -1073,19 +1119,22 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                     return format_file_list_html(accumulated_files), None
 
                 # Upload accumulated files to the API
-                def upload_queued_files(collection, api_url):
+                def upload_queued_files(
+                    collection: str, api_url: str
+                ) -> tuple[str, str, str, None]:
                     if not accumulated_files:
                         return (
                             "⚠️ No files in queue",
+                            "",
                             format_file_list_html(accumulated_files),
                             None,
                         )
                     result = ingest_files(accumulated_files, collection, api_url)
                     # Append queue HTML and clear the dropzone value
-                    return result + (format_file_list_html(accumulated_files), None)
+                    return result + (format_file_list_html(accumulated_files), None)  # type: ignore[return-value]
 
                 # Clear the queue
-                def clear_queue():
+                def clear_queue() -> tuple[str, None]:
                     clear_file_queue()
                     # Clear both the queue display and the File component
                     return format_file_list_html(accumulated_files), None
@@ -1135,7 +1184,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                 )
 
                 # Auto-load collections when Upload tab is selected (updates both dropdowns)
-                def refresh_both_upload_dropdowns(api_url):
+                def refresh_both_upload_dropdowns(api_url: str) -> tuple[Any, Any]:
                     """Refresh both collection dropdowns in Upload tab."""
                     result = refresh_collection_dropdown(api_url)
                     return result, result
@@ -1148,45 +1197,46 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
 
             # Tab 2: Search
             with gr.Tab("🔍 Search") as search_tab:
-                with gr.Row():
-                    with gr.Column(scale=3):
-                        question_input = gr.Textbox(
-                            label="Question",
-                            placeholder="What would you like to know?",
-                            lines=2,
+                with gr.Row(), gr.Column(scale=3):
+                    question_input = gr.Textbox(
+                        label="Question",
+                        placeholder="What would you like to know?",
+                        lines=2,
+                    )
+                    with gr.Row():
+                        search_collection = gr.Dropdown(
+                            choices=["documents"],
+                            value="documents",
+                            label="Collection",
+                            scale=2,
+                            allow_custom_value=True,  # Allow typing custom names
+                            info="Select or type a collection name",
                         )
-                        with gr.Row():
-                            search_collection = gr.Dropdown(
-                                choices=["documents"],
-                                value="documents",
-                                label="Collection",
-                                scale=2,
-                                allow_custom_value=True,  # Allow typing custom names
-                                info="Select or type a collection name",
-                            )
-                            refresh_collections_btn = gr.Button(
-                                "🔄",
-                                size="sm",
-                                scale=0,
-                                min_width=40,
-                            )
-                            top_k = gr.Slider(
-                                minimum=FIELD_CONSTRAINTS["default_top_k"].get("min", 1),
-                                maximum=FIELD_CONSTRAINTS["default_top_k"].get("max", 100),
-                                value=default_top_k,
-                                step=1,
-                                label="Results (top_k)",
-                                scale=1,
-                            )
-                            # Strategy includes "auto" which routes dynamically
-                            strategy_choices = ["auto"] + FIELD_CONSTRAINTS["default_query_strategy"].get("choices", ["vector", "graph", "hybrid"])
-                            strategy = gr.Dropdown(
-                                choices=strategy_choices,
-                                value="auto",
-                                label="Strategy",
-                                scale=1,
-                            )
-                        search_btn = gr.Button("🔍 Search", variant="primary")
+                        refresh_collections_btn = gr.Button(
+                            "🔄",
+                            size="sm",
+                            scale=0,
+                            min_width=40,
+                        )
+                        top_k = gr.Slider(
+                            minimum=FIELD_CONSTRAINTS["default_top_k"].get("min", 1),
+                            maximum=FIELD_CONSTRAINTS["default_top_k"].get("max", 100),
+                            value=default_top_k,
+                            step=1,
+                            label="Results (top_k)",
+                            scale=1,
+                        )
+                        # Strategy includes "auto" which routes dynamically
+                        strategy_choices = ["auto"] + FIELD_CONSTRAINTS[
+                            "default_query_strategy"
+                        ].get("choices", ["vector", "graph", "hybrid"])
+                        strategy = gr.Dropdown(
+                            choices=strategy_choices,
+                            value="auto",
+                            label="Strategy",
+                            scale=1,
+                        )
+                    search_btn = gr.Button("🔍 Search", variant="primary")
 
                 with gr.Row():
                     with gr.Column(scale=3):
@@ -1234,7 +1284,9 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                 )
 
                 with gr.Row():
-                    load_collections_btn = gr.Button("📦 Load Collections", variant="secondary", size="sm")
+                    load_collections_btn = gr.Button(
+                        "📦 Load Collections", variant="secondary", size="sm"
+                    )
                     refresh_btn = gr.Button("🔄 Refresh", size="sm")
                 collections_status = gr.Textbox(label="Status", interactive=False, lines=2)
 
@@ -1285,11 +1337,16 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
 
                 # === EMBEDDING SECTION ===
                 with gr.Accordion("🧠 Embedding Model", open=True):
-                    gr.Markdown("*Configure the embedding model for semantic search. Larger models = better quality but more VRAM.*", elem_classes=["help-text"])
+                    gr.Markdown(
+                        "*Configure the embedding model for semantic search. Larger models = better quality but more VRAM.*",
+                        elem_classes=["help-text"],
+                    )
                     with gr.Row():
                         cfg_embedding_model = gr.Dropdown(
                             choices=EMBEDDING_MODEL_CHOICES,
-                            value=initial_config.get("embedding_model", "sentence-transformers/all-MiniLM-L6-v2"),
+                            value=initial_config.get(
+                                "embedding_model", "sentence-transformers/all-MiniLM-L6-v2"
+                            ),
                             label="Model",
                             allow_custom_value=True,
                             scale=3,
@@ -1313,7 +1370,10 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
 
                 # === DOCUMENT PROCESSING SECTION ===
                 with gr.Accordion("📄 Document Processing", open=True):
-                    gr.Markdown("*Control how documents are split into chunks for indexing.*", elem_classes=["help-text"])
+                    gr.Markdown(
+                        "*Control how documents are split into chunks for indexing.*",
+                        elem_classes=["help-text"],
+                    )
                     with gr.Row():
                         cfg_chunk_size = gr.Number(
                             value=initial_config.get("chunk_size", 512),
@@ -1338,7 +1398,10 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
 
                 # === VECTOR STORE SECTION ===
                 with gr.Accordion("💾 Vector Store", open=True):
-                    gr.Markdown("*Choose where embeddings are stored. FAISS is faster, ChromaDB has built-in filtering.*", elem_classes=["help-text"])
+                    gr.Markdown(
+                        "*Choose where embeddings are stored. FAISS is faster, ChromaDB has built-in filtering.*",
+                        elem_classes=["help-text"],
+                    )
                     with gr.Row():
                         cfg_vector_store = gr.Dropdown(
                             choices=["faiss", "chroma"],
@@ -1364,7 +1427,10 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
 
                 # === API SECTION ===
                 with gr.Accordion("🌐 API Server", open=False):
-                    gr.Markdown("*Network settings for the API server. Changes require restart.*", elem_classes=["help-text"])
+                    gr.Markdown(
+                        "*Network settings for the API server. Changes require restart.*",
+                        elem_classes=["help-text"],
+                    )
                     with gr.Row():
                         cfg_host = gr.Textbox(
                             value=initial_config.get("host", "0.0.0.0"),
@@ -1395,14 +1461,19 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                         )
                     with gr.Row():
                         cfg_cors_origins = gr.Textbox(
-                            value=initial_config.get("cors_origins", "http://localhost:3000,http://localhost:8080"),
+                            value=initial_config.get(
+                                "cors_origins", "http://localhost:3000,http://localhost:8080"
+                            ),
                             label="CORS Origins (comma-separated)",
                             info="Allowed origins for cross-origin requests",
                         )
 
                 # === GRAPHRAG SECTION ===
                 with gr.Accordion("🕸️ GraphRAG", open=False):
-                    gr.Markdown("*Enable knowledge graph extraction for relationship-aware queries. Best for protocols and structured data.*", elem_classes=["help-text"])
+                    gr.Markdown(
+                        "*Enable knowledge graph extraction for relationship-aware queries. Best for protocols and structured data.*",
+                        elem_classes=["help-text"],
+                    )
                     with gr.Row():
                         cfg_enable_graph = gr.Checkbox(
                             value=initial_config.get("enable_graph_rag", True),
@@ -1434,7 +1505,10 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
 
                 # === QUERY & EXTRACTION SECTION ===
                 with gr.Accordion("🔍 Query Routing & Extraction", open=False):
-                    gr.Markdown("*Configure how queries are routed and entities are extracted. LLM modes require Ollama.*", elem_classes=["help-text"])
+                    gr.Markdown(
+                        "*Configure how queries are routed and entities are extracted. LLM modes require Ollama.*",
+                        elem_classes=["help-text"],
+                    )
                     with gr.Row():
                         cfg_router_mode = gr.Dropdown(
                             choices=["pattern", "llm"],
@@ -1479,8 +1553,12 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                 # Action buttons and status at bottom
                 gr.Markdown("---")
                 with gr.Row():
-                    load_config_btn = gr.Button("🔄 Reload from config.yaml", size="sm", variant="secondary")
-                    save_config_btn = gr.Button("💾 Save to config.yaml", size="sm", variant="secondary")
+                    load_config_btn = gr.Button(
+                        "🔄 Reload from config.yaml", size="sm", variant="secondary"
+                    )
+                    save_config_btn = gr.Button(
+                        "💾 Save to config.yaml", size="sm", variant="secondary"
+                    )
                     apply_restart_btn = gr.Button("⚡ Save & Restart Service", variant="primary")
 
                 config_status = gr.Textbox(
@@ -1493,42 +1571,82 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                 # Config components list (order must match get_config_display return order)
                 config_components = [
                     # Row 1: Embedding
-                    cfg_embedding_model, cfg_device, cfg_embedding_batch_size,
+                    cfg_embedding_model,
+                    cfg_device,
+                    cfg_embedding_batch_size,
                     # Row 2: Document Processing
-                    cfg_chunk_size, cfg_chunk_overlap, cfg_pdf_strategy,
+                    cfg_chunk_size,
+                    cfg_chunk_overlap,
+                    cfg_pdf_strategy,
                     # Row 3: Vector Store
-                    cfg_vector_store, cfg_faiss_index_dir, cfg_chroma_persist_dir, cfg_default_collection,
+                    cfg_vector_store,
+                    cfg_faiss_index_dir,
+                    cfg_chroma_persist_dir,
+                    cfg_default_collection,
                     # Row 4: API
-                    cfg_host, cfg_port, cfg_api_prefix, cfg_cors_origins, cfg_log_level,
+                    cfg_host,
+                    cfg_port,
+                    cfg_api_prefix,
+                    cfg_cors_origins,
+                    cfg_log_level,
                     # Row 5: GraphRAG
-                    cfg_enable_graph, cfg_graph_store, cfg_neo4j_uri, cfg_neo4j_user, cfg_neo4j_database,
+                    cfg_enable_graph,
+                    cfg_graph_store,
+                    cfg_neo4j_uri,
+                    cfg_neo4j_user,
+                    cfg_neo4j_database,
                     # Row 6: Query & Extraction
-                    cfg_router_mode, cfg_default_query_strategy, cfg_default_top_k, cfg_entity_mode, cfg_entity_domain, cfg_ollama_model,
+                    cfg_router_mode,
+                    cfg_default_query_strategy,
+                    cfg_default_top_k,
+                    cfg_entity_mode,
+                    cfg_entity_domain,
+                    cfg_ollama_model,
                 ]
 
-                def collect_config(*values):
+                def collect_config(*values: Any) -> dict[str, Any]:
                     """Collect config values into a dictionary."""
                     keys = [
                         # Embedding
-                        "embedding_model", "device", "embedding_batch_size",
+                        "embedding_model",
+                        "device",
+                        "embedding_batch_size",
                         # Document Processing
-                        "chunk_size", "chunk_overlap", "pdf_strategy",
+                        "chunk_size",
+                        "chunk_overlap",
+                        "pdf_strategy",
                         # Vector Store
-                        "vector_store_backend", "faiss_index_dir", "chroma_persist_dir", "default_collection",
+                        "vector_store_backend",
+                        "faiss_index_dir",
+                        "chroma_persist_dir",
+                        "default_collection",
                         # API
-                        "host", "port", "api_prefix", "cors_origins", "log_level",
+                        "host",
+                        "port",
+                        "api_prefix",
+                        "cors_origins",
+                        "log_level",
                         # GraphRAG
-                        "enable_graph_rag", "graph_store_backend", "neo4j_uri", "neo4j_user", "neo4j_database",
+                        "enable_graph_rag",
+                        "graph_store_backend",
+                        "neo4j_uri",
+                        "neo4j_user",
+                        "neo4j_database",
                         # Query & Extraction
-                        "router_mode", "default_query_strategy", "default_top_k", "entity_extraction_mode", "entity_extraction_domain", "ollama_model",
+                        "router_mode",
+                        "default_query_strategy",
+                        "default_top_k",
+                        "entity_extraction_mode",
+                        "entity_extraction_domain",
+                        "ollama_model",
                     ]
-                    return dict(zip(keys, values))
+                    return dict(zip(keys, values, strict=False))
 
-                def save_and_report(*values):
+                def save_and_report(*values: Any) -> str:
                     config = collect_config(*values)
                     return save_config_to_yaml(config)
 
-                def apply_restart_and_report(*values):
+                def apply_restart_and_report(*values: Any) -> str:
                     config = collect_config(*values)
                     return apply_and_restart(config)
 
@@ -1551,7 +1669,10 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
             # Tab 5: System Info
             with gr.Tab("ℹ️ System"):
                 gr.Markdown("*Click 'Load System Info' to see current system status*")
-                system_info = gr.JSON(label="System Information", value={"status": "Click 'Load System Info' to refresh"})
+                system_info = gr.JSON(
+                    label="System Information",
+                    value={"status": "Click 'Load System Info' to refresh"},
+                )
 
                 with gr.Row():
                     load_sys_btn = gr.Button("ℹ️ Load System Info", variant="secondary", size="sm")
@@ -1579,10 +1700,10 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
             """
         )
 
-    return app
+    return app  # type: ignore[no-any-return]
 
 
-def main():
+def main() -> None:
     """Launch the Gradio web interface."""
     import argparse
 
@@ -1618,7 +1739,7 @@ def main():
     # Create and launch UI
     app = create_ui(api_url=args.api_url)
 
-    print(f"\n🚀 Launching RAG Documentation Service UI")
+    print("\n🚀 Launching RAG Documentation Service UI")
     print(f"   Local URL: http://localhost:{port}")
     if args.share:
         print("   Creating public link...")
@@ -1632,4 +1753,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

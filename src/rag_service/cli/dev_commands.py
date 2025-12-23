@@ -11,7 +11,6 @@ import typer
 
 from rag_service.cli.utils import (
     console,
-    exit_with_error,
     print_error,
     print_info,
     print_success,
@@ -40,15 +39,11 @@ def _run_command(args: list[str], check: bool = True) -> int:
 
 @app.command()
 def test(
-    unit: bool = typer.Option(
-        False, "--unit", "-u", help="Run unit tests only."
-    ),
+    unit: bool = typer.Option(False, "--unit", "-u", help="Run unit tests only."),
     integration: bool = typer.Option(
         False, "--integration", "-i", help="Run integration tests only."
     ),
-    coverage: bool = typer.Option(
-        False, "--coverage", "-c", help="Generate coverage report."
-    ),
+    coverage: bool = typer.Option(False, "--coverage", "-c", help="Generate coverage report."),
 ) -> None:
     """Run tests with pytest.
 
@@ -75,11 +70,13 @@ def test(
     args.extend(["-v", "--tb=short"])
 
     if coverage:
-        args.extend([
-            "--cov=src/rag_service",
-            "--cov-report=term-missing",
-            "--cov-report=html",
-        ])
+        args.extend(
+            [
+                "--cov=src/rag_service",
+                "--cov-report=term-missing",
+                "--cov-report=html",
+            ]
+        )
         print_info("Coverage report will be generated.")
 
     console.print()
@@ -95,9 +92,7 @@ def test(
 
 @app.command()
 def lint(
-    fix: bool = typer.Option(
-        False, "--fix", "-f", help="Automatically fix issues."
-    ),
+    fix: bool = typer.Option(False, "--fix", "-f", help="Automatically fix issues."),
 ) -> None:
     """Run linter (ruff) on the codebase.
 
@@ -126,9 +121,7 @@ def lint(
 
 @app.command("format")
 def format_code(
-    check: bool = typer.Option(
-        False, "--check", help="Check formatting without modifying files."
-    ),
+    check: bool = typer.Option(False, "--check", help="Check formatting without modifying files."),
 ) -> None:
     """Format code with ruff.
 

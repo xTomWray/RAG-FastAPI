@@ -82,15 +82,9 @@ class QueryRouter:
         self._llm_model = llm_model or "llama3.2"
 
         # Compile patterns for efficiency
-        self._relational_patterns = [
-            re.compile(p, re.IGNORECASE) for p in self.RELATIONAL_PATTERNS
-        ]
-        self._semantic_patterns = [
-            re.compile(p, re.IGNORECASE) for p in self.SEMANTIC_PATTERNS
-        ]
-        self._hybrid_patterns = [
-            re.compile(p, re.IGNORECASE) for p in self.HYBRID_PATTERNS
-        ]
+        self._relational_patterns = [re.compile(p, re.IGNORECASE) for p in self.RELATIONAL_PATTERNS]
+        self._semantic_patterns = [re.compile(p, re.IGNORECASE) for p in self.SEMANTIC_PATTERNS]
+        self._hybrid_patterns = [re.compile(p, re.IGNORECASE) for p in self.HYBRID_PATTERNS]
 
     def classify(self, query: str) -> QueryStrategy:
         """Classify a query to determine the best retrieval strategy.
@@ -123,25 +117,17 @@ class QueryRouter:
                 return "hybrid"
 
         # Check relational patterns
-        relational_score = sum(
-            1 for p in self._relational_patterns if p.search(query_lower)
-        )
+        relational_score = sum(1 for p in self._relational_patterns if p.search(query_lower))
 
         # Check semantic patterns
-        semantic_score = sum(
-            1 for p in self._semantic_patterns if p.search(query_lower)
-        )
+        semantic_score = sum(1 for p in self._semantic_patterns if p.search(query_lower))
 
-        logger.debug(
-            f"Query scores - relational: {relational_score}, semantic: {semantic_score}"
-        )
+        logger.debug(f"Query scores - relational: {relational_score}, semantic: {semantic_score}")
 
         # Decision logic
         if relational_score > 0 and semantic_score == 0:
             return "graph"
-        elif relational_score > semantic_score:
-            return "hybrid"
-        elif relational_score > 0:
+        elif relational_score > semantic_score or relational_score > 0:
             return "hybrid"
 
         return self._default_strategy
@@ -204,15 +190,9 @@ Respond with ONLY one word: "vector", "graph", or "hybrid"
         """
         query_lower = query.lower().strip()
 
-        matched_relational = [
-            p.pattern for p in self._relational_patterns if p.search(query_lower)
-        ]
-        matched_semantic = [
-            p.pattern for p in self._semantic_patterns if p.search(query_lower)
-        ]
-        matched_hybrid = [
-            p.pattern for p in self._hybrid_patterns if p.search(query_lower)
-        ]
+        matched_relational = [p.pattern for p in self._relational_patterns if p.search(query_lower)]
+        matched_semantic = [p.pattern for p in self._semantic_patterns if p.search(query_lower)]
+        matched_hybrid = [p.pattern for p in self._hybrid_patterns if p.search(query_lower)]
 
         strategy = self.classify(query)
 
@@ -235,13 +215,15 @@ Respond with ONLY one word: "vector", "graph", or "hybrid"
     ) -> str:
         """Generate human-readable reasoning for the classification."""
         if hybrid:
-            return f"Query matches hybrid patterns, needs both semantic context and graph relationships"
+            return (
+                "Query matches hybrid patterns, needs both semantic context and graph relationships"
+            )
         elif strategy == "graph":
             return f"Query is asking about relationships/transitions ({len(relational)} relational patterns matched)"
         elif strategy == "hybrid" and relational:
             return f"Query has both semantic and relational aspects ({len(semantic)} semantic, {len(relational)} relational)"
         else:
-            return f"Query is a general/explanatory question best suited for semantic search"
+            return "Query is a general/explanatory question best suited for semantic search"
 
 
 def create_router(
@@ -260,4 +242,3 @@ def create_router(
         Configured QueryRouter instance.
     """
     return QueryRouter(mode=mode, default_strategy=default_strategy, llm_model=llm_model)
-

@@ -54,7 +54,7 @@ class TestEntityExtractor:
         entities, relationships = extractor.extract(text)
 
         # Check that relationships were found
-        rel_pairs = {(r.source, r.target) for r in relationships}
+        {(r.source, r.target) for r in relationships}
 
         # At least some transitions should be found
         assert len(relationships) >= 0  # May vary based on pattern matching
@@ -168,4 +168,3 @@ class TestMAVLinkEntityExtractor:
         extractor = create_extractor(domain="general")
         assert isinstance(extractor, EntityExtractor)
         assert not isinstance(extractor, MAVLinkEntityExtractor)
-

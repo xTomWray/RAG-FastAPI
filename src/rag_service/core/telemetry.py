@@ -28,8 +28,9 @@ Usage:
 import functools
 import logging
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
-from typing import Any, Callable, TypeVar, ParamSpec
+from typing import Any, ParamSpec, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -44,26 +45,24 @@ _meter = None
 
 # Try to import OpenTelemetry - gracefully handle if not installed
 try:
-    from opentelemetry import trace, metrics
-    from opentelemetry.sdk.trace import TracerProvider, Span
+    from opentelemetry import metrics, trace
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+    from opentelemetry.sdk.trace import Span, TracerProvider
     from opentelemetry.sdk.trace.export import (
         BatchSpanProcessor,
         ConsoleSpanExporter,
         SimpleSpanProcessor,
     )
-    from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.resources import Resource, SERVICE_NAME
-    from opentelemetry.trace import Status, StatusCode
-    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-    from opentelemetry.semconv.trace import SpanAttributes
     from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
+    from opentelemetry.trace import Status, StatusCode
 
     OTEL_AVAILABLE = True
 except ImportError:
     OTEL_AVAILABLE = False
-    trace = None
-    metrics = None
-    Span = None
+    trace = None  # type: ignore[assignment]
+    metrics = None  # type: ignore[assignment]
+    Span = None  # type: ignore[misc, assignment]
 
 
 def is_telemetry_available() -> bool:
@@ -76,6 +75,7 @@ def is_telemetry_enabled() -> bool:
     if not OTEL_AVAILABLE:
         return False
     from rag_service.config import get_settings
+
     return get_settings().enable_telemetry
 
 
@@ -98,6 +98,7 @@ def setup_telemetry() -> bool:
         return False
 
     from rag_service.config import get_settings
+
     settings = get_settings()
 
     if not settings.enable_telemetry:
@@ -106,11 +107,13 @@ def setup_telemetry() -> bool:
 
     try:
         # Create resource with service info
-        resource = Resource.create({
-            SERVICE_NAME: settings.telemetry_service_name,
-            "service.version": "0.1.0",
-            "deployment.environment": "development",
-        })
+        resource = Resource.create(
+            {
+                SERVICE_NAME: settings.telemetry_service_name,
+                "service.version": "0.1.0",
+                "deployment.environment": "development",
+            }
+        )
 
         # Configure sampling
         sampler = TraceIdRatioBased(settings.telemetry_sample_rate)
@@ -127,10 +130,13 @@ def setup_telemetry() -> bool:
         elif settings.telemetry_exporter == "otlp":
             try:
                 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
                 exporter = OTLPSpanExporter(endpoint=settings.telemetry_endpoint)
-                processor = BatchSpanProcessor(exporter)
-                tracer_provider.add_span_processor(processor)
-                logger.info(f"Telemetry configured with OTLP exporter: {settings.telemetry_endpoint}")
+                otlp_processor = BatchSpanProcessor(exporter)
+                tracer_provider.add_span_processor(otlp_processor)
+                logger.info(
+                    f"Telemetry configured with OTLP exporter: {settings.telemetry_endpoint}"
+                )
             except ImportError:
                 logger.warning("OTLP exporter not available. Install opentelemetry-exporter-otlp")
                 processor = SimpleSpanProcessor(ConsoleSpanExporter())
@@ -139,15 +145,24 @@ def setup_telemetry() -> bool:
         elif settings.telemetry_exporter == "jaeger":
             try:
                 from opentelemetry.exporter.jaeger.thrift import JaegerExporter
-                exporter = JaegerExporter(
-                    agent_host_name=settings.telemetry_endpoint.split(":")[0].replace("http://", ""),
-                    agent_port=int(settings.telemetry_endpoint.split(":")[-1]) if ":" in settings.telemetry_endpoint else 6831,
+
+                jaeger_exporter = JaegerExporter(
+                    agent_host_name=settings.telemetry_endpoint.split(":")[0].replace(
+                        "http://", ""
+                    ),
+                    agent_port=int(settings.telemetry_endpoint.split(":")[-1])
+                    if ":" in settings.telemetry_endpoint
+                    else 6831,
                 )
-                processor = BatchSpanProcessor(exporter)
-                tracer_provider.add_span_processor(processor)
-                logger.info(f"Telemetry configured with Jaeger exporter: {settings.telemetry_endpoint}")
+                jaeger_processor = BatchSpanProcessor(jaeger_exporter)
+                tracer_provider.add_span_processor(jaeger_processor)
+                logger.info(
+                    f"Telemetry configured with Jaeger exporter: {settings.telemetry_endpoint}"
+                )
             except ImportError:
-                logger.warning("Jaeger exporter not available. Install opentelemetry-exporter-jaeger")
+                logger.warning(
+                    "Jaeger exporter not available. Install opentelemetry-exporter-jaeger"
+                )
                 processor = SimpleSpanProcessor(ConsoleSpanExporter())
                 tracer_provider.add_span_processor(processor)
 
@@ -174,7 +189,7 @@ def setup_telemetry() -> bool:
         return False
 
 
-def get_tracer():
+def get_tracer() -> Any:
     """Get the configured tracer instance.
 
     Returns a no-op tracer if telemetry is not enabled.
@@ -187,7 +202,7 @@ def get_tracer():
     return _tracer
 
 
-def get_meter():
+def get_meter() -> Any:
     """Get the configured meter instance.
 
     Returns a no-op meter if telemetry is not enabled.
@@ -218,48 +233,50 @@ class NoOpSpan:
     def record_exception(self, exception: Exception) -> None:
         pass
 
-    def __enter__(self):
+    def __enter__(self) -> "NoOpSpan":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        return False
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any
+    ) -> None:
+        pass
 
 
 class NoOpTracer:
     """No-operation tracer for when telemetry is disabled."""
 
-    def start_span(self, name: str, **kwargs) -> NoOpSpan:
+    def start_span(self, _name: str, **_kwargs: Any) -> NoOpSpan:
         return NoOpSpan()
 
-    def start_as_current_span(self, name: str, **kwargs) -> NoOpSpan:
+    def start_as_current_span(self, _name: str, **_kwargs: Any) -> NoOpSpan:
         return NoOpSpan()
 
 
 class NoOpMeter:
     """No-operation meter for when telemetry is disabled."""
 
-    def create_counter(self, name: str, **kwargs):
+    def create_counter(self, _name: str, **_kwargs: Any) -> "NoOpCounter":
         return NoOpCounter()
 
-    def create_histogram(self, name: str, **kwargs):
+    def create_histogram(self, _name: str, **_kwargs: Any) -> "NoOpHistogram":
         return NoOpHistogram()
 
-    def create_gauge(self, name: str, **kwargs):
+    def create_gauge(self, _name: str, **_kwargs: Any) -> "NoOpGauge":
         return NoOpGauge()
 
 
 class NoOpCounter:
-    def add(self, value: int, attributes: dict | None = None) -> None:
+    def add(self, value: int, attributes: dict[str, Any] | None = None) -> None:
         pass
 
 
 class NoOpHistogram:
-    def record(self, value: float, attributes: dict | None = None) -> None:
+    def record(self, value: float, attributes: dict[str, Any] | None = None) -> None:
         pass
 
 
 class NoOpGauge:
-    def set(self, value: float, attributes: dict | None = None) -> None:
+    def set(self, value: float, attributes: dict[str, Any] | None = None) -> None:
         pass
 
 
@@ -285,6 +302,7 @@ def traced(
         def encode_texts(texts: list[str]) -> np.ndarray:
             ...
     """
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @functools.wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -326,6 +344,7 @@ def traced(
                     raise
 
         return wrapper
+
     return decorator
 
 
@@ -341,6 +360,7 @@ def traced_async(
         async def search(query: str) -> list[Document]:
             ...
     """
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @functools.wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -353,14 +373,14 @@ def traced_async(
 
                 start_time = time.perf_counter()
                 try:
-                    result = await func(*args, **kwargs)
+                    result = await func(*args, **kwargs)  # type: ignore[misc]
                     duration_ms = (time.perf_counter() - start_time) * 1000
                     span.set_attribute("duration_ms", duration_ms)
 
                     if OTEL_AVAILABLE:
                         span.set_status(Status(StatusCode.OK))
 
-                    return result
+                    return result  # type: ignore[no-any-return]
 
                 except Exception as e:
                     duration_ms = (time.perf_counter() - start_time) * 1000
@@ -373,7 +393,8 @@ def traced_async(
 
                     raise
 
-        return wrapper
+        return wrapper  # type: ignore[return-value]
+
     return decorator
 
 
@@ -381,7 +402,7 @@ def traced_async(
 def span(
     name: str,
     attributes: dict[str, Any] | None = None,
-):
+) -> Any:
     """Context manager for creating spans with automatic timing.
 
     Example:
@@ -411,7 +432,7 @@ def span(
             raise
 
 
-def add_gpu_metrics(span_obj) -> None:
+def add_gpu_metrics(span_obj: Any) -> None:
     """Add GPU metrics as span attributes.
 
     Captures current GPU state including:
@@ -424,6 +445,7 @@ def add_gpu_metrics(span_obj) -> None:
         span_obj: The span to add attributes to.
     """
     from rag_service.config import get_settings
+
     settings = get_settings()
 
     if not settings.telemetry_include_gpu_metrics:
@@ -431,6 +453,7 @@ def add_gpu_metrics(span_obj) -> None:
 
     try:
         import torch
+
         if not torch.cuda.is_available():
             span_obj.set_attribute("gpu.available", False)
             return
@@ -448,15 +471,23 @@ def add_gpu_metrics(span_obj) -> None:
         span_obj.set_attribute("gpu.memory.allocated_gb", round(memory_allocated, 2))
         span_obj.set_attribute("gpu.memory.reserved_gb", round(memory_reserved, 2))
         span_obj.set_attribute("gpu.memory.total_gb", round(memory_total, 2))
-        span_obj.set_attribute("gpu.memory.percent", round(memory_allocated / memory_total * 100, 1))
+        span_obj.set_attribute(
+            "gpu.memory.percent", round(memory_allocated / memory_total * 100, 1)
+        )
 
         # Try to get nvidia-smi metrics
         try:
             import subprocess
+
             result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=temperature.gpu,utilization.gpu,power.draw",
-                 "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=2
+                [
+                    "nvidia-smi",
+                    "--query-gpu=temperature.gpu,utilization.gpu,power.draw",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=2,
             )
             if result.returncode == 0:
                 parts = result.stdout.strip().split(", ")
@@ -473,7 +504,7 @@ def add_gpu_metrics(span_obj) -> None:
         span_obj.set_attribute("gpu.metrics_error", str(e))
 
 
-def add_document_metrics(span_obj, documents: list) -> None:
+def add_document_metrics(span_obj: Any, documents: list[Any]) -> None:
     """Add document-related metrics to a span.
 
     Args:
@@ -487,7 +518,7 @@ def add_document_metrics(span_obj, documents: list) -> None:
     span_obj.set_attribute("documents.count", len(documents))
 
     # Calculate text statistics
-    total_chars = sum(len(getattr(doc, 'text', str(doc))) for doc in documents)
+    total_chars = sum(len(getattr(doc, "text", str(doc))) for doc in documents)
     avg_chars = total_chars / len(documents) if documents else 0
 
     span_obj.set_attribute("documents.total_chars", total_chars)
@@ -496,8 +527,8 @@ def add_document_metrics(span_obj, documents: list) -> None:
     # Count unique sources if available
     sources = set()
     for doc in documents:
-        if hasattr(doc, 'metadata') and isinstance(doc.metadata, dict):
-            source = doc.metadata.get('source')
+        if hasattr(doc, "metadata") and isinstance(doc.metadata, dict):
+            source = doc.metadata.get("source")
             if source:
                 sources.add(source)
 
@@ -505,7 +536,7 @@ def add_document_metrics(span_obj, documents: list) -> None:
         span_obj.set_attribute("documents.unique_sources", len(sources))
 
 
-def add_embedding_metrics(span_obj, texts: list, embeddings=None) -> None:
+def add_embedding_metrics(span_obj: Any, texts: list[str], embeddings: Any = None) -> None:
     """Add embedding-related metrics to a span.
 
     Args:
@@ -528,7 +559,9 @@ def add_embedding_metrics(span_obj, texts: list, embeddings=None) -> None:
             pass
 
 
-def add_search_metrics(span_obj, query: str, results: list, scores: list | None = None) -> None:
+def add_search_metrics(
+    span_obj: Any, query: str, results: list[Any], scores: list[float] | None = None
+) -> None:
     """Add search-related metrics to a span.
 
     Args:
@@ -558,7 +591,7 @@ def _safe_str(value: Any, max_length: int = 200) -> str:
 
 
 # Create standard metrics
-def create_standard_metrics():
+def create_standard_metrics() -> dict[str, Any]:
     """Create standard metrics for the RAG service."""
     meter = get_meter()
 
@@ -572,7 +605,6 @@ def create_standard_metrics():
             "rag.requests.duration_ms",
             description="Request duration in milliseconds",
         ),
-
         # Embedding metrics
         "embedding_count": meter.create_counter(
             "rag.embeddings.total",
@@ -586,7 +618,6 @@ def create_standard_metrics():
             "rag.embeddings.batch_size",
             description="Batch sizes for embedding operations",
         ),
-
         # Document metrics
         "documents_processed": meter.create_counter(
             "rag.documents.processed_total",
@@ -596,7 +627,6 @@ def create_standard_metrics():
             "rag.chunks.created_total",
             description="Total chunks created",
         ),
-
         # Search metrics
         "search_count": meter.create_counter(
             "rag.search.total",
@@ -606,7 +636,6 @@ def create_standard_metrics():
             "rag.search.duration_ms",
             description="Search duration in milliseconds",
         ),
-
         # GPU metrics
         "gpu_memory_used": meter.create_gauge(
             "rag.gpu.memory_used_gb",
@@ -619,7 +648,7 @@ def create_standard_metrics():
     }
 
 
-def instrument_fastapi(app) -> None:
+def instrument_fastapi(app: Any) -> None:
     """Add OpenTelemetry instrumentation to a FastAPI app.
 
     This automatically traces all HTTP requests with:

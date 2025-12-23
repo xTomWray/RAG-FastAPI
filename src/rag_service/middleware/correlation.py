@@ -18,15 +18,14 @@ Example:
 """
 
 import uuid
+from collections.abc import Callable
 from contextvars import ContextVar
-from typing import Callable
 
+import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
-
-import structlog
 
 # Header name for correlation ID
 CORRELATION_ID_HEADER = "X-Correlation-ID"
@@ -73,7 +72,7 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
         """
         super().__init__(app)
 
-    async def dispatch(
+    async def dispatch(  # type: ignore[override]
         self,
         request: Request,
         call_next: Callable[[Request], Response],
@@ -100,12 +99,12 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
             structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
 
             # Process the request
-            response = await call_next(request)
+            response = await call_next(request)  # type: ignore[misc]
 
             # Add correlation ID to response headers
             response.headers[CORRELATION_ID_HEADER] = correlation_id
 
-            return response
+            return response  # type: ignore[no-any-return]
         finally:
             # Reset context variable
             _correlation_id_ctx.reset(token)

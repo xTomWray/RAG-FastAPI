@@ -1,6 +1,5 @@
 """FAISS-based vector store implementation."""
 
-import json
 import pickle
 import uuid
 from pathlib import Path
@@ -117,7 +116,7 @@ class FAISSVectorStore(VectorStore):
 
         # Build results
         results = []
-        for score, idx in zip(scores[0], indices[0]):
+        for score, idx in zip(scores[0], indices[0], strict=False):
             if idx == -1:  # FAISS returns -1 for missing results
                 continue
             doc = self._documents[collection][idx]
@@ -255,4 +254,3 @@ class FAISSVectorStore(VectorStore):
         ]
         self._id_map[collection] = meta["ids"]
         self._embedding_dim = meta.get("embedding_dim", self._embedding_dim)
-

@@ -49,7 +49,7 @@ class OperationStats:
     last_timestamp: float = 0.0
 
     # Rolling history for percentile calculations
-    recent_durations: deque = field(default_factory=lambda: deque(maxlen=100))
+    recent_durations: deque[float] = field(default_factory=lambda: deque(maxlen=100))
 
     def record(self, duration_ms: float, success: bool = True) -> None:
         """Record an operation execution."""
@@ -87,7 +87,7 @@ class OperationStats:
             return 0.0
         sorted_durations = sorted(self.recent_durations)
         idx = int(len(sorted_durations) * p / 100)
-        return sorted_durations[min(idx, len(sorted_durations) - 1)]
+        return float(sorted_durations[min(idx, len(sorted_durations) - 1)])
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -95,7 +95,9 @@ class OperationStats:
             "count": self.count,
             "total_duration_ms": round(self.total_duration_ms, 2),
             "avg_duration_ms": round(self.avg_duration_ms, 2),
-            "min_duration_ms": round(self.min_duration_ms, 2) if self.min_duration_ms != float("inf") else 0.0,
+            "min_duration_ms": round(self.min_duration_ms, 2)
+            if self.min_duration_ms != float("inf")
+            else 0.0,
             "max_duration_ms": round(self.max_duration_ms, 2),
             "last_duration_ms": round(self.last_duration_ms, 2),
             "p50_duration_ms": round(self.get_percentile(50), 2),
@@ -103,7 +105,11 @@ class OperationStats:
             "p99_duration_ms": round(self.get_percentile(99), 2),
             "failures": self.failures,
             "success_rate": round(self.success_rate, 1),
-            "ops_per_second": round(self.count / max(1, time.time() - self.last_timestamp + 0.001), 2) if self.count > 0 else 0.0,
+            "ops_per_second": round(
+                self.count / max(1, time.time() - self.last_timestamp + 0.001), 2
+            )
+            if self.count > 0
+            else 0.0,
         }
 
 
@@ -136,8 +142,8 @@ class EmbeddingStats:
 
         # Update running average batch size
         self.avg_batch_size = (
-            (self.avg_batch_size * (self.total_batches - 1) + batch_size) / self.total_batches
-        )
+            self.avg_batch_size * (self.total_batches - 1) + batch_size
+        ) / self.total_batches
 
     @property
     def texts_per_second(self) -> float:
@@ -249,10 +255,11 @@ class StatsCollector:
     Thread-safe collector that aggregates metrics from all components.
     """
 
-    _instance = None
+    _instance: "StatsCollector | None" = None
     _lock = threading.Lock()
+    _initialized: bool = False
 
-    def __new__(cls):
+    def __new__(cls) -> "StatsCollector":
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -260,7 +267,7 @@ class StatsCollector:
                     cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self):
+    def __init__(self) -> None:
         if self._initialized:
             return
 
@@ -279,11 +286,11 @@ class StatsCollector:
         self.graph_store = OperationStats()
 
         # GPU tracking (updated periodically)
-        self._gpu_samples: deque = deque(maxlen=60)  # Last 60 samples
+        self._gpu_samples: deque[dict[str, Any]] = deque(maxlen=60)  # Last 60 samples
         self._last_gpu_sample: dict[str, Any] = {}
 
         # Error tracking
-        self._errors: deque = deque(maxlen=50)  # Last 50 errors
+        self._errors: deque[dict[str, Any]] = deque(maxlen=50)  # Last 50 errors
 
         self._initialized = True
         logger.debug("Stats collector initialized")
@@ -379,15 +386,19 @@ class StatsCollector:
         with self._lock:
             self.graph_store.record(duration_ms, success)
 
-    def record_error(self, error_type: str, message: str, context: dict[str, Any] | None = None) -> None:
+    def record_error(
+        self, error_type: str, message: str, context: dict[str, Any] | None = None
+    ) -> None:
         """Record an error."""
         with self._lock:
-            self._errors.append({
-                "timestamp": datetime.now().isoformat(),
-                "type": error_type,
-                "message": message[:500],  # Truncate long messages
-                "context": context or {},
-            })
+            self._errors.append(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "type": error_type,
+                    "message": message[:500],  # Truncate long messages
+                    "context": context or {},
+                }
+            )
 
     def record_gpu_sample(self, gpu_info: dict[str, Any]) -> None:
         """Record a GPU metrics sample."""
@@ -433,9 +444,9 @@ class StatsCollector:
             if not torch.cuda.is_available():
                 return {"available": False}
 
-            memory_allocated = torch.cuda.memory_allocated() / (1024 ** 3)
-            memory_reserved = torch.cuda.memory_reserved() / (1024 ** 3)
-            memory_total = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+            memory_allocated = torch.cuda.memory_allocated() / (1024**3)
+            memory_reserved = torch.cuda.memory_reserved() / (1024**3)
+            memory_total = torch.cuda.get_device_properties(0).total_memory / (1024**3)
 
             info = {
                 "available": True,
@@ -484,7 +495,7 @@ class StatsCollector:
         import platform
         import sys
 
-        info = {
+        info: dict[str, Any] = {
             "python_version": sys.version.split()[0],
             "platform": platform.system(),
             "platform_release": platform.release(),
@@ -504,8 +515,8 @@ class StatsCollector:
             import psutil
 
             mem = psutil.virtual_memory()
-            info["memory_total_gb"] = round(mem.total / (1024 ** 3), 1)
-            info["memory_available_gb"] = round(mem.available / (1024 ** 3), 1)
+            info["memory_total_gb"] = round(mem.total / (1024**3), 1)
+            info["memory_available_gb"] = round(mem.available / (1024**3), 1)
             info["memory_percent"] = mem.percent
         except ImportError:
             pass
@@ -578,15 +589,15 @@ class StatsCollector:
         overall_score = (sum(scores) / len(scores) if scores else 100.0) - error_penalty
         overall_score = max(0, min(100, overall_score))
 
-        status = "healthy" if overall_score >= 90 else "degraded" if overall_score >= 70 else "unhealthy"
+        status = (
+            "healthy" if overall_score >= 90 else "degraded" if overall_score >= 70 else "unhealthy"
+        )
 
         return {
             "status": status,
             "score": round(overall_score, 1),
             "total_operations": (
-                self.embeddings.ops.count
-                + self.searches.ops.count
-                + self.ingestions.ops.count
+                self.embeddings.ops.count + self.searches.ops.count + self.ingestions.ops.count
             ),
             "total_errors": len(self._errors),
         }
@@ -601,14 +612,16 @@ class StatsCollector:
         lines.append("=" * 60)
 
         # Service info
-        lines.append(f"\n📊 Service Status:")
+        lines.append("\n📊 Service Status:")
         lines.append(f"   Uptime: {summary['service']['uptime']}")
-        lines.append(f"   Health: {summary['health']['status'].upper()} ({summary['health']['score']}%)")
+        lines.append(
+            f"   Health: {summary['health']['status'].upper()} ({summary['health']['score']}%)"
+        )
         lines.append(f"   Total Operations: {summary['health']['total_operations']:,}")
 
         # Configuration
         config = summary.get("config", {})
-        lines.append(f"\n⚙️ Configuration:")
+        lines.append("\n⚙️ Configuration:")
         lines.append(f"   Model: {config.get('embedding_model', 'N/A')}")
         lines.append(f"   Device: {config.get('device', 'N/A')}")
         lines.append(f"   Vector Store: {config.get('vector_store_backend', 'N/A')}")
@@ -617,30 +630,38 @@ class StatsCollector:
         gpu = summary.get("gpu", {})
         if gpu.get("available"):
             lines.append(f"\n🎮 GPU ({gpu.get('device_name', 'Unknown')}):")
-            lines.append(f"   Memory: {gpu.get('memory_allocated_gb', 0):.1f} / {gpu.get('memory_total_gb', 0):.1f} GB ({gpu.get('memory_percent', 0):.0f}%)")
+            lines.append(
+                f"   Memory: {gpu.get('memory_allocated_gb', 0):.1f} / {gpu.get('memory_total_gb', 0):.1f} GB ({gpu.get('memory_percent', 0):.0f}%)"
+            )
             if "temperature_c" in gpu:
                 lines.append(f"   Temperature: {gpu['temperature_c']:.0f}°C")
             if "power_draw_watts" in gpu:
-                lines.append(f"   Power: {gpu['power_draw_watts']:.0f}W / {gpu.get('power_limit_watts', 'N/A')}W")
+                lines.append(
+                    f"   Power: {gpu['power_draw_watts']:.0f}W / {gpu.get('power_limit_watts', 'N/A')}W"
+                )
         else:
-            lines.append(f"\n🖥️ Running on CPU")
+            lines.append("\n🖥️ Running on CPU")
 
         # Embeddings
         emb = summary["operations"]["embeddings"]
         if emb["count"] > 0:
-            lines.append(f"\n🧠 Embeddings:")
+            lines.append("\n🧠 Embeddings:")
             lines.append(f"   Operations: {emb['count']:,}")
             lines.append(f"   Texts Embedded: {emb['total_texts']:,}")
             lines.append(f"   Throughput: {emb['texts_per_second']:.1f} texts/sec")
-            lines.append(f"   Latency: avg={emb['avg_duration_ms']:.1f}ms, p95={emb['p95_duration_ms']:.1f}ms")
+            lines.append(
+                f"   Latency: avg={emb['avg_duration_ms']:.1f}ms, p95={emb['p95_duration_ms']:.1f}ms"
+            )
 
         # Searches
         search = summary["operations"]["searches"]
         if search["count"] > 0:
-            lines.append(f"\n🔍 Searches:")
+            lines.append("\n🔍 Searches:")
             lines.append(f"   Queries: {search['total_queries']:,}")
             lines.append(f"   Avg Results: {search['avg_results_per_query']:.1f}")
-            lines.append(f"   Latency: avg={search['avg_duration_ms']:.1f}ms, p95={search['p95_duration_ms']:.1f}ms")
+            lines.append(
+                f"   Latency: avg={search['avg_duration_ms']:.1f}ms, p95={search['p95_duration_ms']:.1f}ms"
+            )
             if search["strategy_counts"]:
                 strategies = ", ".join(f"{k}={v}" for k, v in search["strategy_counts"].items())
                 lines.append(f"   Strategies: {strategies}")
@@ -648,7 +669,7 @@ class StatsCollector:
         # Ingestions
         ingest = summary["operations"]["ingestions"]
         if ingest["count"] > 0:
-            lines.append(f"\n📥 Ingestions:")
+            lines.append("\n📥 Ingestions:")
             lines.append(f"   Documents: {ingest['total_documents']:,}")
             lines.append(f"   Chunks Created: {ingest['total_chunks']:,}")
             lines.append(f"   Data Processed: {ingest['total_mb']:.1f} MB")
@@ -695,18 +716,20 @@ class timed_operation:
     def __init__(
         self,
         operation: str,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         self.operation = operation
         self.kwargs = kwargs
         self.start_time = 0.0
         self.success = True
 
-    def __enter__(self):
+    def __enter__(self) -> "timed_operation":
         self.start_time = time.perf_counter()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any
+    ) -> None:
         duration_ms = (time.perf_counter() - self.start_time) * 1000
         self.success = exc_type is None
 
@@ -751,5 +774,4 @@ class timed_operation:
                 message=str(exc_val),
                 context={"operation": self.operation, **self.kwargs},
             )
-
-        return False  # Don't suppress exceptions
+        # Don't suppress exceptions (return None)

@@ -128,4 +128,3 @@ class TestSentenceTransformerEmbedding:
         device = SentenceTransformerEmbedding._resolve_device("auto")
         # Should return one of: cuda, mps, or cpu
         assert device in ["cuda", "mps", "cpu"]
-

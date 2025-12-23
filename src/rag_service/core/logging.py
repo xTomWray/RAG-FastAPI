@@ -89,7 +89,7 @@ def get_logger(name: str = __name__) -> structlog.BoundLogger:
     Returns:
         A bound logger instance with structured logging support.
     """
-    return structlog.get_logger(name)
+    return structlog.get_logger(name)  # type: ignore[no-any-return]
 
 
 def bind_context(**kwargs: Any) -> None:

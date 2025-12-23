@@ -25,22 +25,22 @@ Usage:
 """
 
 import atexit
+import contextlib
 import datetime
-import gc
 import os
 import platform
 import sys
 import threading
 import traceback
-from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, TextIO
+from typing import Any, TextIO
 
 
 class LogLevel(Enum):
     """Log levels."""
+
     DEBUG = 10
     INFO = 20
     WARN = 30
@@ -51,6 +51,7 @@ class LogLevel(Enum):
 @dataclass
 class SystemState:
     """Snapshot of system state."""
+
     timestamp: str = ""
 
     # CPU
@@ -123,8 +124,7 @@ class SystemState:
         # Process
         if self.process_memory_mb is not None:
             lines.append(
-                f"    PROCESS: {self.process_memory_mb:.1f} MB | "
-                f"threads={self.thread_count}"
+                f"    PROCESS: {self.process_memory_mb:.1f} MB | threads={self.thread_count}"
             )
 
         # Disk
@@ -140,9 +140,7 @@ def capture_system_state() -> SystemState:
     Returns:
         SystemState with current metrics.
     """
-    state = SystemState(
-        timestamp=datetime.datetime.now().isoformat(timespec="milliseconds")
-    )
+    state = SystemState(timestamp=datetime.datetime.now().isoformat(timespec="milliseconds"))
 
     # RAM and CPU via psutil (if available)
     try:
@@ -163,7 +161,7 @@ def capture_system_state() -> SystemState:
         state.thread_count = threading.active_count()
 
         # Disk
-        disk = psutil.disk_usage('.')
+        disk = psutil.disk_usage(".")
         state.disk_free_gb = disk.free / (1024**3)
 
     except ImportError:
@@ -185,8 +183,7 @@ def capture_system_state() -> SystemState:
             mem_reserved = torch.cuda.memory_reserved(0)
             state.gpu_memory_used_gb = mem_reserved / (1024**3)
             state.gpu_memory_percent = (
-                100 * mem_reserved / props.total_memory
-                if props.total_memory > 0 else 0
+                100 * mem_reserved / props.total_memory if props.total_memory > 0 else 0
             )
     except Exception:
         pass
@@ -198,35 +195,25 @@ def capture_system_state() -> SystemState:
         pynvml.nvmlInit()
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
 
-        try:
+        with contextlib.suppress(Exception):
             state.gpu_temperature_c = float(
                 pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
             )
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             util = pynvml.nvmlDeviceGetUtilizationRates(handle)
             state.gpu_utilization = util.gpu
-        except Exception:
-            pass
 
         # Power draw (critical for crash diagnosis)
-        try:
+        with contextlib.suppress(Exception):
             state.gpu_power_draw_w = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             state.gpu_power_limit_w = pynvml.nvmlDeviceGetPowerManagementLimit(handle) / 1000.0
-        except Exception:
-            pass
 
         # Clock speed
-        try:
+        with contextlib.suppress(Exception):
             state.gpu_clock_mhz = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS)
-        except Exception:
-            pass
 
         pynvml.nvmlShutdown()
     except Exception:
@@ -279,8 +266,8 @@ class CrashSafeLogger:
             date_str = datetime.datetime.now().strftime("%Y%m%d")
             self._log_path = log_dir / f"{log_prefix}_{date_str}.log"
 
-            # Open in append mode with line buffering
-            self._file = open(self._log_path, "a", encoding="utf-8", buffering=1)
+            # Open in append mode with line buffering (kept open for crash logging)
+            self._file = open(self._log_path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
 
             # Write session header
             self._write_header()
@@ -315,13 +302,15 @@ class CrashSafeLogger:
             lines.append(f"GPU: {state.gpu_name}")
             lines.append(f"GPU Memory: {state.gpu_memory_total_gb:.1f} GB")
 
-        lines.extend([
-            "-" * 90,
-            "FORMAT: [timestamp] [level] [operation_context] message",
-            "        (system state on separate indented lines when captured)",
-            "=" * 90,
-            "",
-        ])
+        lines.extend(
+            [
+                "-" * 90,
+                "FORMAT: [timestamp] [level] [operation_context] message",
+                "        (system state on separate indented lines when captured)",
+                "=" * 90,
+                "",
+            ]
+        )
 
         for line in lines:
             self._file.write(line + "\n")
@@ -331,10 +320,8 @@ class CrashSafeLogger:
         """Flush and sync to disk."""
         if self._file:
             self._file.flush()
-            try:
+            with contextlib.suppress(Exception):
                 os.fsync(self._file.fileno())
-            except Exception:
-                pass
 
     def _format_message(
         self,
@@ -480,8 +467,8 @@ class CrashSafeLogger:
                     backup.unlink()
                 self._log_path.rename(backup)
 
-                # Create new file
-                self._file = open(self._log_path, "a", encoding="utf-8", buffering=1)
+                # Create new file (kept open for crash logging)
+                self._file = open(self._log_path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
                 self._write_header()
         except Exception:
             pass
@@ -515,17 +502,20 @@ class OperationTracer:
         self.context = context
         self.start_time: datetime.datetime | None = None
 
-    def __enter__(self):
+    def __enter__(self) -> "OperationTracer":
         self.start_time = datetime.datetime.now()
         self.logger.push_context(self.operation)
         self.logger.info(
-            f">>> START",
+            ">>> START",
             capture_state=self.capture_before,
             **self.context,
         )
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any
+    ) -> None:
+        assert self.start_time is not None  # Set in __enter__
         duration = (datetime.datetime.now() - self.start_time).total_seconds()
 
         if exc_type is not None:
@@ -540,10 +530,11 @@ class OperationTracer:
             )
 
         self.logger.pop_context()
-        return False  # Don't suppress exceptions
+        # Don't suppress exceptions (return None)
 
     def checkpoint(self, label: str, **extra_context: Any) -> None:
         """Log a checkpoint within the operation."""
+        assert self.start_time is not None  # Set in __enter__
         elapsed = (datetime.datetime.now() - self.start_time).total_seconds()
         self.logger.info(
             f"... {label} (elapsed: {elapsed:.3f}s)",
@@ -652,8 +643,8 @@ def log_state(label: str = "STATE_CHECK") -> None:
     get_crash_logger().log_state(label)
 
 
-# Alias for convenience
-crash_logger = property(lambda self: get_crash_logger())
+# Alias for convenience - returns the singleton crash logger instance
+crash_logger = get_crash_logger()
 
 
 # Module-level functions that use the global logger

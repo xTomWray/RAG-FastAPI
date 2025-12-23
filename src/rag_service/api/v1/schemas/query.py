@@ -1,5 +1,7 @@
 """Query-related Pydantic schemas."""
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -40,7 +42,7 @@ class SearchResultSchema(BaseModel):
     """Schema for a single search result."""
 
     text: str = Field(description="The document chunk text")
-    metadata: dict = Field(description="Document metadata")
+    metadata: dict[str, Any] = Field(description="Document metadata")
     score: float = Field(description="Similarity score (0-1)")
     document_id: str = Field(description="Unique document identifier")
 
@@ -50,9 +52,6 @@ class QueryResponse(BaseModel):
 
     chunks: list[SearchResultSchema] = Field(description="Retrieved document chunks")
     sources: list[str] = Field(description="Unique source files")
-    token_estimate: int = Field(
-        description="Estimated token count for the returned context"
-    )
+    token_estimate: int = Field(description="Estimated token count for the returned context")
     query: str = Field(description="The original query")
     collection: str = Field(description="Collection searched")
-

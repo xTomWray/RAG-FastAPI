@@ -16,7 +16,6 @@ from rag_service.cli.utils import (
     print_info,
     print_success,
     print_warning,
-    run_subprocess,
 )
 
 app = typer.Typer(help="Installation commands")
@@ -109,12 +108,17 @@ def _install_cuda_pytorch() -> bool:
 
     # Install CUDA-enabled PyTorch from PyTorch's index
     args = [
-        sys.executable, "-m", "pip", "install",
-        "torch", "torchvision",
-        "--index-url", "https://download.pytorch.org/whl/cu124",
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "torch",
+        "torchvision",
+        "--index-url",
+        "https://download.pytorch.org/whl/cu124",
     ]
 
-    console.print(f"[dim]Running: pip install torch torchvision --index-url .../cu124[/dim]")
+    console.print("[dim]Running: pip install torch torchvision --index-url .../cu124[/dim]")
     console.print()
 
     result = subprocess.run(args)
@@ -142,9 +146,7 @@ def install(
     dev: bool = typer.Option(
         False, "--dev", "-d", help="Install development dependencies and pre-commit hooks."
     ),
-    gpu: bool = typer.Option(
-        False, "--gpu", "-g", help="Install GPU support (CUDA 12.4)."
-    ),
+    gpu: bool = typer.Option(False, "--gpu", "-g", help="Install GPU support (CUDA 12.4)."),
     all_extras: bool = typer.Option(
         False, "--all", "-a", help="Install all optional dependencies."
     ),
@@ -166,7 +168,9 @@ def install(
     if gpu or all_extras:
         if not _install_cuda_pytorch():
             print_error("Failed to install CUDA PyTorch.")
-            print_info("Try manually: pip install torch --index-url https://download.pytorch.org/whl/cu124")
+            print_info(
+                "Try manually: pip install torch --index-url https://download.pytorch.org/whl/cu124"
+            )
             exit_with_error("GPU installation failed.")
 
         console.print()

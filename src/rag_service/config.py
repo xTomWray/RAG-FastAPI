@@ -8,11 +8,10 @@ Priority (highest to lowest):
 """
 
 import logging
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -54,7 +53,7 @@ def load_yaml_config(config_path: Path | None = None) -> dict[str, Any]:
         return {}
 
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
+        with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
         logger.info(f"Loaded configuration from {config_path}")
         return config
@@ -359,7 +358,7 @@ class Settings(BaseSettings):
         sensitive_fields = {"neo4j_password"}
 
         result = {}
-        for field_name, field_info in self.model_fields.items():
+        for field_name in self.model_fields:
             if field_name in sensitive_fields:
                 continue
             value = getattr(self, field_name)

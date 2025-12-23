@@ -1,12 +1,11 @@
 """Document chunking and processing using unstructured library."""
 
+import hashlib
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Literal
-
-import hashlib
 
 from rag_service.core.exceptions import DocumentProcessingError, UnsupportedFileTypeError
 from rag_service.core.retriever import Document
@@ -176,9 +175,7 @@ class DocumentChunker:
             # Cap at reasonable limit to avoid excessive thread overhead
             max_workers = min(max_workers, 16)
 
-        logger.info(
-            f"Processing {len(file_paths)} files in parallel using {max_workers} workers"
-        )
+        logger.info(f"Processing {len(file_paths)} files in parallel using {max_workers} workers")
 
         documents = []
         errors = []
@@ -187,8 +184,7 @@ class DocumentChunker:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all file processing tasks
             future_to_path = {
-                executor.submit(self.process_file, file_path): file_path
-                for file_path in file_paths
+                executor.submit(self.process_file, file_path): file_path for file_path in file_paths
             }
 
             # Collect results as they complete
@@ -262,8 +258,10 @@ class DocumentChunker:
                     "Install Poppler for better PDF extraction: https://github.com/oschwartz10612/poppler-windows/releases"
                 )
             else:
-                logger.warning(f"unstructured PDF processing failed for {path.name}: {e}. Falling back to pypdf.")
-            
+                logger.warning(
+                    f"unstructured PDF processing failed for {path.name}: {e}. Falling back to pypdf."
+                )
+
             # Fallback to pypdf
             from pypdf import PdfReader
 
@@ -327,9 +325,7 @@ class DocumentChunker:
 
             # Extract tables (optimized with list comprehension)
             table_texts = [
-                " | ".join(
-                    cell.text.strip() for cell in row.cells if cell.text.strip()
-                )
+                " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
                 for table in doc.tables
                 for row in table.rows
             ]
@@ -441,4 +437,3 @@ def create_chunker(
         chunk_overlap=chunk_overlap,
         pdf_strategy=pdf_strategy,
     )
-

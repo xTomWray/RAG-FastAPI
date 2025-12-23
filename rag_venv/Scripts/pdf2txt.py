@@ -6,7 +6,8 @@ output it to plain text, html, xml or tags.
 import argparse
 import logging
 import sys
-from typing import Any, Container, Iterable, List, Optional
+from collections.abc import Container, Iterable
+from typing import Any, Optional
 
 import pdfminer.high_level
 from pdfminer.layout import LAParams
@@ -135,8 +136,7 @@ def create_parser() -> argparse.ArgumentParser:
         "-R",
         default=0,
         type=int,
-        help="The number of degrees to rotate the PDF "
-        "before other types of processing.",
+        help="The number of degrees to rotate the PDF " "before other types of processing.",
     )
 
     la_params = LAParams()  # will be used for defaults
@@ -224,8 +224,7 @@ def create_parser() -> argparse.ArgumentParser:
         "-o",
         type=str,
         default="-",
-        help="Path to file where output is written. "
-        'Or "-" (default) to write to stdout.',
+        help="Path to file where output is written. " 'Or "-" (default) to write to stdout.',
     )
     output_params.add_argument(
         "--output_type",
@@ -274,14 +273,13 @@ def create_parser() -> argparse.ArgumentParser:
         "-S",
         default=False,
         action="store_true",
-        help="Remove control statement from text. "
-        "Only used when output_type is xml.",
+        help="Remove control statement from text. " "Only used when output_type is xml.",
     )
 
     return parser
 
 
-def parse_args(args: Optional[List[str]]) -> argparse.Namespace:
+def parse_args(args: Optional[list[str]]) -> argparse.Namespace:
     parsed_args = create_parser().parse_args(args=args)
 
     # Propagate parsed layout parameters to LAParams object
@@ -312,7 +310,7 @@ def parse_args(args: Optional[List[str]]) -> argparse.Namespace:
     return parsed_args
 
 
-def main(args: Optional[List[str]] = None) -> int:
+def main(args: Optional[list[str]] = None) -> int:
     parsed_args = parse_args(args)
     outfp = extract_text(**vars(parsed_args))
     outfp.close()

@@ -107,4 +107,3 @@ class VectorStore(ABC):
     def load(self) -> None:
         """Load the vector store from disk."""
         ...
-

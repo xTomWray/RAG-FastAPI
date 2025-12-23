@@ -1,5 +1,6 @@
 """Ingest endpoints for document processing and indexing."""
 
+import contextlib
 import logging
 import time
 from pathlib import Path
@@ -14,7 +15,7 @@ from rag_service.api.v1.schemas import (
     IngestStatus,
 )
 from rag_service.config import get_settings
-from rag_service.core.crash_logger import get_crash_logger, trace_operation
+from rag_service.core.crash_logger import get_crash_logger
 from rag_service.core.exceptions import (
     CollectionNotFoundError,
     DocumentProcessingError,
@@ -35,9 +36,9 @@ router = APIRouter(tags=["ingest"])
 
 
 def _build_knowledge_graph(
-    documents: list,
+    documents: list[Any],
     collection: str,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     """Extract entities and relationships from documents and add to graph store.
 
     Args:
@@ -119,8 +120,6 @@ async def ingest_file(request: FileIngestRequest) -> IngestResponse:
     Raises:
         HTTPException: If file not found or processing fails.
     """
-    settings = get_settings()
-
     try:
         # Get services
         chunker = get_chunker()
@@ -157,7 +156,7 @@ async def ingest_file(request: FileIngestRequest) -> IngestResponse:
         vector_store.persist()
 
         # Build knowledge graph (if enabled)
-        graph_stats = _build_knowledge_graph(documents, request.collection)
+        _build_knowledge_graph(documents, request.collection)
 
         return IngestResponse(
             status=IngestStatus.SUCCESS,
@@ -193,7 +192,6 @@ async def ingest_directory(request: DirectoryIngestRequest) -> IngestResponse:
     Raises:
         HTTPException: If directory not found or processing fails.
     """
-    settings = get_settings()
     start_time = time.perf_counter()
     success = True
     documents_count = 0
@@ -242,7 +240,7 @@ async def ingest_directory(request: DirectoryIngestRequest) -> IngestResponse:
         files_processed = len({doc.metadata.get("source") for doc in documents})
         documents_count = files_processed
         chunks_count = len(documents)
-        bytes_processed = sum(len(doc.text.encode('utf-8')) for doc in documents)
+        bytes_processed = sum(len(doc.text.encode("utf-8")) for doc in documents)
 
         crash_log.info(
             "INGEST_CHUNKING_COMPLETE",
@@ -278,12 +276,9 @@ async def ingest_directory(request: DirectoryIngestRequest) -> IngestResponse:
         )
 
         # Persist vector store (ChromaDB auto-persists, FAISS needs explicit persist)
-        if hasattr(vector_store, 'persist'):
-            try:
+        if hasattr(vector_store, "persist"):
+            with contextlib.suppress(AttributeError):
                 vector_store.persist()
-            except AttributeError:
-                # ChromaDB PersistentClient doesn't have persist() method
-                pass
 
         crash_log.info("INGEST_VECTOR_STORE_COMPLETE", capture_state=True)
 
@@ -410,11 +405,9 @@ async def delete_collection(collection_name: str) -> dict[str, str]:
         try:
             vector_store.delete_collection(collection_name)
             # Persist if method exists (FAISS needs it, ChromaDB auto-persists)
-            if hasattr(vector_store, 'persist'):
-                try:
+            if hasattr(vector_store, "persist"):
+                with contextlib.suppress(AttributeError):
                     vector_store.persist()
-                except AttributeError:
-                    pass
             deleted.append("vector")
         except (CollectionNotFoundError, Exception) as e:
             # ChromaDB raises different exception types, catch all and check if it's "not found"
@@ -438,13 +431,9 @@ async def delete_collection(collection_name: str) -> dict[str, str]:
                 pass
 
         if not deleted:
-            raise HTTPException(
-                status_code=404, detail=f"Collection '{collection_name}' not found"
-            )
+            raise HTTPException(status_code=404, detail=f"Collection '{collection_name}' not found")
 
-        return {
-            "message": f"Collection '{collection_name}' deleted from: {', '.join(deleted)}"
-        }
+        return {"message": f"Collection '{collection_name}' deleted from: {', '.join(deleted)}"}
 
     except HTTPException:
         raise

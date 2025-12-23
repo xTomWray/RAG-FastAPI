@@ -77,7 +77,7 @@ class ChromaVectorStore(VectorStore):
             ids=doc_ids,
             embeddings=embeddings.tolist(),
             documents=texts,
-            metadatas=metadatas,
+            metadatas=metadatas,  # type: ignore[arg-type]
         )
 
         return doc_ids
@@ -126,7 +126,7 @@ class ChromaVectorStore(VectorStore):
                 search_results.append(
                     SearchResult(
                         text=results["documents"][0][i] if results["documents"] else "",
-                        metadata=results["metadatas"][0][i] if results["metadatas"] else {},
+                        metadata=dict(results["metadatas"][0][i]) if results["metadatas"] else {},
                         score=score,
                         document_id=doc_id,
                     )
@@ -176,7 +176,7 @@ class ChromaVectorStore(VectorStore):
 
     def persist(self) -> None:
         """Persist the database to disk.
-        
+
         Note: ChromaDB PersistentClient auto-persists, so this is a no-op.
         Kept for API compatibility with FAISSVectorStore.
         """
@@ -186,4 +186,3 @@ class ChromaVectorStore(VectorStore):
     def load(self) -> None:
         """Load is automatic with ChromaDB's persistent client."""
         pass
-

@@ -7,18 +7,16 @@ throttling to prevent system crashes during intensive embedding operations.
 import gc
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, TypeVar
+from typing import Any, TypeVar
 
-from rag_service.core.crash_logger import get_crash_logger, trace_operation
+from rag_service.core.crash_logger import get_crash_logger
 from rag_service.core.gpu_diagnostics import (
     collect_gpu_diagnostics,
     get_diagnostic_logger,
-    dump_diagnostics,
 )
 from rag_service.core.system_diagnostics import (
-    collect_cpu_diagnostics,
-    collect_memory_diagnostics,
     get_system_logger,
 )
 
@@ -61,7 +59,7 @@ def get_gpu_status() -> GPUStatus:
         # Memory info
         memory_total = torch.cuda.get_device_properties(device).total_memory
         memory_reserved = torch.cuda.memory_reserved(device)
-        memory_allocated = torch.cuda.memory_allocated(device)
+        torch.cuda.memory_allocated(device)
 
         # Use reserved memory as "used" since that's what's actually allocated on GPU
         memory_used = memory_reserved
@@ -173,7 +171,7 @@ def wait_for_gpu_cooldown(
 
 def throttled_batch_processor(
     items: list[T],
-    processor: Callable[[list[T]], list],
+    processor: Callable[[list[T]], list[Any]],
     batch_size: int = 32,
     max_memory_percent: float = 80.0,
     max_temperature_c: float = 75.0,
@@ -181,7 +179,7 @@ def throttled_batch_processor(
     adaptive_batch_size: bool = True,
     min_batch_size: int = 4,
     progress_callback: Callable[[int, int], None] | None = None,
-) -> list:
+) -> list[Any]:
     """Process items in batches with GPU throttling and memory management.
 
     This is the main safeguard function that:
@@ -260,7 +258,9 @@ def throttled_batch_processor(
 
         # Check power draw if approaching limit
         if diag and diag.power_percent and diag.power_percent > 90:
-            diag_log.warn(f"HIGH POWER DRAW: {diag.power_draw_w:.1f}W ({diag.power_percent:.1f}% of limit)")
+            diag_log.warn(
+                f"HIGH POWER DRAW: {diag.power_draw_w:.1f}W ({diag.power_percent:.1f}% of limit)"
+            )
 
         # Log state before each batch (crash-safe)
         crash_log.info(
@@ -289,7 +289,9 @@ def throttled_batch_processor(
                         f"(memory: {status.memory_percent:.1f}%)"
                     )
                     current_batch_size = new_size
-            elif status.memory_percent < max_memory_percent - 30 and current_batch_size < batch_size:
+            elif (
+                status.memory_percent < max_memory_percent - 30 and current_batch_size < batch_size
+            ):
                 # Gradually restore batch size when memory is comfortable
                 new_size = min(batch_size, current_batch_size * 2)
                 if new_size != current_batch_size:
@@ -351,12 +353,14 @@ def throttled_batch_processor(
                     error=str(e),
                     batch_size=current_batch_size,
                 )
-                logger.warning(f"GPU OOM error, reducing batch size and retrying")
+                logger.warning("GPU OOM error, reducing batch size and retrying")
                 clear_gpu_memory()
                 current_batch_size = max(min_batch_size, current_batch_size // 2)
 
                 if current_batch_size < min_batch_size:
-                    diag_log.critical(f"Fatal OOM - cannot process with min batch size {min_batch_size}")
+                    diag_log.critical(
+                        f"Fatal OOM - cannot process with min batch size {min_batch_size}"
+                    )
                     crash_log.critical(
                         "BATCH_PROCESSOR_FATAL_OOM",
                         capture_state=True,
@@ -379,7 +383,9 @@ def throttled_batch_processor(
 
         # Log progress periodically
         if processed % (batch_size * 10) == 0 or processed == total_items:
-            logger.info(f"Progress: {processed}/{total_items} items ({100*processed/total_items:.1f}%)")
+            logger.info(
+                f"Progress: {processed}/{total_items} items ({100 * processed / total_items:.1f}%)"
+            )
 
         # Log full system state every 5 batches (helps see trends)
         if batch_num % 5 == 0:
@@ -429,7 +435,7 @@ def estimate_memory_for_batch(
 
     avg_tokens = avg_text_length * 0.3
     sequence_memory = num_items * avg_tokens * embedding_dim * bytes_per_float
-    attention_memory = num_items * (avg_tokens ** 2) * bytes_per_float
+    attention_memory = num_items * (avg_tokens**2) * bytes_per_float
 
     # Total with overhead
     total = (sequence_memory + attention_memory) * 2  # 2x for gradients/activations

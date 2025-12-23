@@ -231,4 +231,3 @@ class TestInMemoryGraphStore:
         entities = store.query_by_type("State", collection="test")
         assert len(entities) == 1
         assert entities[0].name == "TEST"
-

@@ -4,9 +4,7 @@ Tests for FAISS, ChromaDB, and Neo4j stores to increase coverage
 of database operations including edge cases and error handling.
 """
 
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -18,7 +16,6 @@ from rag_service.infrastructure.faiss_store import FAISSVectorStore
 from rag_service.infrastructure.neo4j_store import (
     Entity,
     InMemoryGraphStore,
-    Neo4jGraphStore,
     Relationship,
 )
 
@@ -60,7 +57,9 @@ class TestFAISSDatabaseCoverage:
         result = store.add_documents([], np.array([]).reshape(0, 384), "test")
         assert result == []
 
-    def test_add_documents_with_custom_ids(self, store: FAISSVectorStore, sample_documents, sample_embeddings):
+    def test_add_documents_with_custom_ids(
+        self, store: FAISSVectorStore, sample_documents, sample_embeddings
+    ):
         """Test adding documents with custom IDs."""
         sample_documents[0].document_id = "custom-id-1"
         sample_documents[1].document_id = "custom-id-2"
@@ -76,7 +75,9 @@ class TestFAISSDatabaseCoverage:
         with pytest.raises(CollectionNotFoundError):
             store.search(query_embedding, top_k=5, collection="empty")
 
-    def test_search_top_k_larger_than_collection(self, store: FAISSVectorStore, sample_documents, sample_embeddings):
+    def test_search_top_k_larger_than_collection(
+        self, store: FAISSVectorStore, sample_documents, sample_embeddings
+    ):
         """Test searching with top_k larger than collection size."""
         store.add_documents(sample_documents, sample_embeddings, "test")
         query_embedding = sample_embeddings[0]
@@ -90,7 +91,9 @@ class TestFAISSDatabaseCoverage:
         collections = store.list_collections()
         assert collections == []
 
-    def test_list_collections_multiple(self, store: FAISSVectorStore, sample_documents, sample_embeddings):
+    def test_list_collections_multiple(
+        self, store: FAISSVectorStore, sample_documents, sample_embeddings
+    ):
         """Test listing multiple collections."""
         store.add_documents(sample_documents, sample_embeddings, "collection1")
         store.add_documents(sample_documents, sample_embeddings, "collection2")
@@ -105,7 +108,9 @@ class TestFAISSDatabaseCoverage:
         with pytest.raises(CollectionNotFoundError):
             store.delete_collection("nonexistent")
 
-    def test_get_collection_info(self, store: FAISSVectorStore, sample_documents, sample_embeddings):
+    def test_get_collection_info(
+        self, store: FAISSVectorStore, sample_documents, sample_embeddings
+    ):
         """Test getting collection information."""
         store.add_documents(sample_documents, sample_embeddings, "test")
         info = store.get_collection_info("test")
@@ -180,7 +185,9 @@ class TestChromaDBDatabaseCoverage:
         results = store.search(query_embedding, top_k=5, collection="empty")
         assert len(results) == 0
 
-    def test_search_top_k_larger_than_collection(self, store: ChromaVectorStore, sample_documents, sample_embeddings):
+    def test_search_top_k_larger_than_collection(
+        self, store: ChromaVectorStore, sample_documents, sample_embeddings
+    ):
         """Test searching with top_k larger than collection size."""
         store.add_documents(sample_documents, sample_embeddings, "test")
         query_embedding = sample_embeddings[0]
@@ -193,7 +200,9 @@ class TestChromaDBDatabaseCoverage:
         collections = store.list_collections()
         assert collections == []
 
-    def test_list_collections_multiple(self, store: ChromaVectorStore, sample_documents, sample_embeddings):
+    def test_list_collections_multiple(
+        self, store: ChromaVectorStore, sample_documents, sample_embeddings
+    ):
         """Test listing multiple collections."""
         store.add_documents(sample_documents, sample_embeddings, "collection1")
         store.add_documents(sample_documents, sample_embeddings, "collection2")
@@ -205,10 +214,13 @@ class TestChromaDBDatabaseCoverage:
     def test_delete_collection_nonexistent(self, store: ChromaVectorStore):
         """Test deleting a nonexistent collection."""
         import chromadb.errors
+
         with pytest.raises((CollectionNotFoundError, chromadb.errors.NotFoundError)):
             store.delete_collection("nonexistent")
 
-    def test_get_collection_info(self, store: ChromaVectorStore, sample_documents, sample_embeddings):
+    def test_get_collection_info(
+        self, store: ChromaVectorStore, sample_documents, sample_embeddings
+    ):
         """Test getting collection information."""
         store.add_documents(sample_documents, sample_embeddings, "test")
         info = store.get_collection_info("test")
@@ -220,6 +232,7 @@ class TestChromaDBDatabaseCoverage:
     def test_get_collection_info_nonexistent(self, store: ChromaVectorStore):
         """Test getting info for nonexistent collection."""
         import chromadb.errors
+
         with pytest.raises((CollectionNotFoundError, chromadb.errors.NotFoundError)):
             store.get_collection_info("nonexistent")
 
@@ -253,7 +266,7 @@ class TestNeo4jDatabaseCoverage:
         entity = Entity(name="MAVLink", entity_type="Protocol", properties={"version": "2.0"})
         entity_id = graph_store.add_entity(entity, "test")
         assert entity_id == "MAVLink"
-        
+
         # Verify entity was added by checking stats
         stats = graph_store.get_collection_stats("test")
         assert stats["total_nodes"] >= 1
@@ -264,12 +277,12 @@ class TestNeo4jDatabaseCoverage:
         entity2 = Entity(name="TAKEOFF", entity_type="Command")
         graph_store.add_entity(entity1, "test")
         graph_store.add_entity(entity2, "test")
-        
+
         relationship = Relationship(
             source="ARM",
             target="TAKEOFF",
             relationship_type="ENABLES",
-            properties={"required": True}
+            properties={"required": True},
         )
         graph_store.add_relationship(relationship, "test")
 
@@ -304,11 +317,9 @@ class TestNeo4jDatabaseCoverage:
         entity2 = Entity(name="Entity2", entity_type="Type2")
         graph_store.add_entity(entity1, "test")
         graph_store.add_entity(entity2, "test")
-        
+
         relationship = Relationship(
-            source="Entity1",
-            target="Entity2",
-            relationship_type="RELATES_TO"
+            source="Entity1", target="Entity2", relationship_type="RELATES_TO"
         )
         graph_store.add_relationship(relationship, "test")
 
@@ -323,7 +334,7 @@ class TestNeo4jDatabaseCoverage:
         # InMemoryGraphStore doesn't have delete_entity, use delete_collection or check it exists
         stats_before = graph_store.get_collection_stats("test")
         assert stats_before["total_nodes"] >= 1
-        
+
         # Delete the collection to verify deletion works
         graph_store.delete_collection("test")
         stats_after = graph_store.get_collection_stats("test")

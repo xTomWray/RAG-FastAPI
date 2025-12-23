@@ -121,4 +121,3 @@ class TestDocumentChunker:
         chunker = create_chunker(chunk_size=200, chunk_overlap=30)
         assert chunker._chunk_size == 200
         assert chunker._chunk_overlap == 30
-

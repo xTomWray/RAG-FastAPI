@@ -47,4 +47,3 @@ class UnsupportedFileTypeError(DocumentProcessingError):
     """Raised when attempting to process an unsupported file type."""
 
     pass
-

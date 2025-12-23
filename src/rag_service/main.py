@@ -1,8 +1,8 @@
 """FastAPI application factory and configuration."""
 
 import os
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,7 +31,7 @@ def setup_logging() -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager.
 
     Handles startup and shutdown events.
@@ -114,16 +114,18 @@ def create_app() -> FastAPI:
 
     # Serve manifest.json to prevent 404 errors from browser PWA detection
     @app.get("/manifest.json", include_in_schema=False)
-    async def manifest():
-        return JSONResponse({
-            "name": "RAG Documentation Service",
-            "short_name": "RAG Service",
-            "description": "Document retrieval and question answering",
-            "start_url": "/ui",
-            "display": "standalone",
-            "background_color": "#ffffff",
-            "theme_color": "#1976d2",
-        })
+    async def manifest() -> JSONResponse:
+        return JSONResponse(
+            {
+                "name": "RAG Documentation Service",
+                "short_name": "RAG Service",
+                "description": "Document retrieval and question answering",
+                "start_url": "/ui",
+                "display": "standalone",
+                "background_color": "#ffffff",
+                "theme_color": "#1976d2",
+            }
+        )
 
     # Mount Gradio UI if enabled
     if ENABLE_GUI:
@@ -139,8 +141,8 @@ def create_app() -> FastAPI:
             app = gr.mount_gradio_app(app, gradio_app, path="/ui")
 
             # Redirect root to UI
-            @app.get("/", include_in_schema=False)
-            async def redirect_to_ui():
+            @app.get("/", include_in_schema=False)  # type: ignore[untyped-decorator]
+            async def redirect_to_ui() -> RedirectResponse:
                 return RedirectResponse(url="/ui")
 
             logger.info("Gradio UI mounted at /ui")
@@ -155,4 +157,3 @@ def create_app() -> FastAPI:
 
 # Create the app instance
 app = create_app()
-

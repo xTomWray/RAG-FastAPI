@@ -14,11 +14,13 @@ Usage:
 import typer
 from rich.console import Console
 
-from rag_service.cli import commands
-from rag_service.cli import dev_commands
-from rag_service.cli import docker_commands
-from rag_service.cli import clean_commands
-from rag_service.cli import install_commands
+from rag_service.cli import (
+    clean_commands,
+    commands,
+    dev_commands,
+    docker_commands,
+    install_commands,
+)
 
 # Create the main Typer app
 app = typer.Typer(
@@ -93,9 +95,7 @@ def run_with_restart_loop() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "start":
         python_exe = sys.executable
         # Run the actual CLI as a subprocess
-        base_cmd = [python_exe, "-c",
-                    "from rag_service.cli.main import app; app()",
-                    *sys.argv[1:]]
+        base_cmd = [python_exe, "-c", "from rag_service.cli.main import app; app()", *sys.argv[1:]]
 
         while True:
             console.print("[dim][Launcher] Starting service...[/dim]")

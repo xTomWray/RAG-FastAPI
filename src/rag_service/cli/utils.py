@@ -14,7 +14,6 @@ from typing import NoReturn
 
 import httpx
 from rich.console import Console
-from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 # Shared console instance for consistent output
@@ -80,7 +79,7 @@ def is_process_running(pid: int) -> bool:
     if sys.platform == "win32":
         import ctypes
 
-        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        kernel32 = ctypes.windll.kernel32
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
         handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if handle:
@@ -107,7 +106,7 @@ def check_service_health(port: int, timeout: float = 2.0) -> bool:
     """
     try:
         response = httpx.get(f"http://localhost:{port}/health", timeout=timeout)
-        return response.status_code == 200
+        return bool(response.status_code == 200)
     except Exception:
         return False
 
@@ -212,7 +211,7 @@ def exit_with_error(message: str, code: int = 1) -> NoReturn:
     raise SystemExit(code)
 
 
-def create_spinner(description: str) -> Progress:
+def create_spinner(_description: str) -> Progress:
     """Create a spinner progress indicator.
 
     Args:

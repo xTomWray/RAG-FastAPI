@@ -4,7 +4,6 @@ Uses Typer's CliRunner for testing CLI commands without
 actually starting servers or running subprocesses.
 """
 
-import pytest
 from typer.testing import CliRunner
 
 from rag_service.cli.main import app

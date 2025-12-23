@@ -7,6 +7,7 @@ and checking service status.
 
 import os
 import time
+from typing import Any
 
 import typer
 import uvicorn
@@ -16,7 +17,6 @@ from rag_service.cli.utils import (
     console,
     exit_with_error,
     is_process_running,
-    print_error,
     print_info,
     print_success,
     print_warning,
@@ -39,15 +39,11 @@ def start(
     port: int | None = typer.Option(
         None, "--port", "-p", help="Port to bind to (overrides config)."
     ),
-    reload: bool = typer.Option(
-        False, "--reload", "-r", help="Enable hot reload for development."
-    ),
+    reload: bool = typer.Option(False, "--reload", "-r", help="Enable hot reload for development."),
     no_ui: bool = typer.Option(
         False, "--no-ui", help="Disable embedded Gradio UI (API-only mode)."
     ),
-    workers: int = typer.Option(
-        1, "--workers", "-w", help="Number of uvicorn workers."
-    ),
+    workers: int = typer.Option(1, "--workers", "-w", help="Number of uvicorn workers."),
 ) -> None:
     """Start the RAG service.
 
@@ -78,7 +74,7 @@ def start(
     write_pid_file()
 
     console.print()
-    console.print(f"[bold green]Starting RAG Documentation Service[/bold green]")
+    console.print("[bold green]Starting RAG Documentation Service[/bold green]")
     console.print(f"  [dim]Host:[/dim] {actual_host}")
     console.print(f"  [dim]Port:[/dim] {actual_port}")
     console.print(f"  [dim]Workers:[/dim] {workers}")
@@ -148,15 +144,11 @@ def restart(
     port: int | None = typer.Option(
         None, "--port", "-p", help="Port to bind to (overrides config)."
     ),
-    reload: bool = typer.Option(
-        False, "--reload", "-r", help="Enable hot reload for development."
-    ),
+    reload: bool = typer.Option(False, "--reload", "-r", help="Enable hot reload for development."),
     no_ui: bool = typer.Option(
         False, "--no-ui", help="Disable embedded Gradio UI (API-only mode)."
     ),
-    workers: int = typer.Option(
-        1, "--workers", "-w", help="Number of uvicorn workers."
-    ),
+    workers: int = typer.Option(1, "--workers", "-w", help="Number of uvicorn workers."),
 ) -> None:
     """Restart the RAG service.
 
@@ -224,9 +216,7 @@ def stats(
     json_output: bool = typer.Option(
         False, "--json", "-j", help="Output as JSON instead of formatted text."
     ),
-    reset: bool = typer.Option(
-        False, "--reset", "-r", help="Reset statistics after displaying."
-    ),
+    reset: bool = typer.Option(False, "--reset", "-r", help="Reset statistics after displaying."),
 ) -> None:
     """Show service runtime statistics.
 
@@ -242,8 +232,9 @@ def stats(
         rag-service stats --json       # Output as JSON
         rag-service stats --reset      # Show then reset
     """
-    import httpx
     import json as json_module
+
+    import httpx
 
     settings = get_settings()
     port = settings.port
@@ -252,8 +243,7 @@ def stats(
     # Check if service is running
     if not check_service_health(port):
         exit_with_error(
-            f"Service not responding on port {port}. "
-            "Use 'rag-service start' to start the service."
+            f"Service not responding on port {port}. Use 'rag-service start' to start the service."
         )
 
     try:
@@ -270,7 +260,6 @@ def stats(
             console.print(json_module.dumps(data, indent=2))
         else:
             # Use the formatted output from stats module
-            from rag_service.core.stats import StatsCollector
 
             # Create a temporary collector just for formatting
             # (we display data from API, not local stats)
@@ -290,27 +279,29 @@ def stats(
         exit_with_error(f"Error fetching stats: {e}")
 
 
-def _format_stats_output(data: dict) -> None:
+def _format_stats_output(data: dict[str, Any]) -> None:
     """Format and print statistics to console.
 
     Args:
         data: Statistics dictionary from API.
     """
-    from rich.table import Table
     from rich.panel import Panel
+    from rich.table import Table
 
     # Service status
     service = data.get("service", {})
     health = data.get("health", {})
 
     console.print()
-    console.print(Panel.fit(
-        f"[bold]Uptime:[/bold] {service.get('uptime', 'N/A')}  |  "
-        f"[bold]Health:[/bold] {health.get('status', 'unknown').upper()} ({health.get('score', 0)}%)  |  "
-        f"[bold]Operations:[/bold] {health.get('total_operations', 0):,}",
-        title="📊 RAG Service Statistics",
-        border_style="blue",
-    ))
+    console.print(
+        Panel.fit(
+            f"[bold]Uptime:[/bold] {service.get('uptime', 'N/A')}  |  "
+            f"[bold]Health:[/bold] {health.get('status', 'unknown').upper()} ({health.get('score', 0)}%)  |  "
+            f"[bold]Operations:[/bold] {health.get('total_operations', 0):,}",
+            title="📊 RAG Service Statistics",
+            border_style="blue",
+        )
+    )
 
     # GPU info
     gpu = data.get("gpu", {})
@@ -323,14 +314,16 @@ def _format_stats_output(data: dict) -> None:
         mem_pct = gpu.get("memory_percent", 0)
         gpu_table.add_row(
             "Memory",
-            f"{gpu.get('memory_allocated_gb', 0):.1f} / {gpu.get('memory_total_gb', 0):.1f} GB ({mem_pct:.0f}%)"
+            f"{gpu.get('memory_allocated_gb', 0):.1f} / {gpu.get('memory_total_gb', 0):.1f} GB ({mem_pct:.0f}%)",
         )
         if "temperature_c" in gpu:
             temp = gpu["temperature_c"]
             temp_style = "red" if temp > 80 else "yellow" if temp > 70 else "green"
             gpu_table.add_row("Temperature", f"[{temp_style}]{temp:.0f}°C[/{temp_style}]")
         if "power_draw_watts" in gpu:
-            gpu_table.add_row("Power", f"{gpu['power_draw_watts']:.0f}W / {gpu.get('power_limit_watts', 'N/A')}W")
+            gpu_table.add_row(
+                "Power", f"{gpu['power_draw_watts']:.0f}W / {gpu.get('power_limit_watts', 'N/A')}W"
+            )
         if "utilization_percent" in gpu:
             gpu_table.add_row("Utilization", f"{gpu['utilization_percent']:.0f}%")
 
@@ -398,6 +391,8 @@ def _format_stats_output(data: dict) -> None:
         console.print()
         console.print(f"[yellow]⚠️ Recent Errors ({len(errors)}):[/yellow]")
         for err in errors[-5:]:
-            console.print(f"  [dim]{err.get('timestamp', '')}[/dim] [red]{err.get('type', 'Error')}[/red]: {err.get('message', '')[:80]}")
+            console.print(
+                f"  [dim]{err.get('timestamp', '')}[/dim] [red]{err.get('type', 'Error')}[/red]: {err.get('message', '')[:80]}"
+            )
 
     console.print()

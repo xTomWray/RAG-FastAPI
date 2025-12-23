@@ -9,12 +9,13 @@ Supports FP16 (half precision) for reduced memory and power usage.
 
 import logging
 import time
-from typing import Callable, Literal, Protocol
+from collections.abc import Callable
+from typing import Any, Literal, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
 
-from rag_service.core.gpu_diagnostics import get_diagnostic_logger, dump_diagnostics
+from rag_service.core.gpu_diagnostics import get_diagnostic_logger
 from rag_service.core.stats import get_stats_collector
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ def _try_apply_power_limit(target_watts: int | None) -> bool:
         return False
 
     try:
-        from rag_service.core.gpu_power import set_power_limit, get_power_info
+        from rag_service.core.gpu_power import get_power_info, set_power_limit
 
         info = get_power_info()
         if info and info["power_limit"] != target_watts:
@@ -53,7 +54,9 @@ def _try_apply_power_limit(target_watts: int | None) -> bool:
     return False
 
 
-def _configure_torch_performance(enable_tf32: bool = True, enable_cudnn_benchmark: bool = True) -> None:
+def _configure_torch_performance(
+    enable_tf32: bool = True, enable_cudnn_benchmark: bool = True
+) -> None:
     """Configure PyTorch for maximum GPU performance.
 
     Args:
@@ -86,7 +89,7 @@ def _configure_torch_performance(enable_tf32: bool = True, enable_cudnn_benchmar
 
             # Disable debug features for speed
             torch.autograd.set_detect_anomaly(False)
-            torch.autograd.profiler.emit_nvtx(False)
+            torch.autograd.profiler.emit_nvtx(False)  # type: ignore[no-untyped-call]
 
             if opts_enabled:
                 logger.info(f"PyTorch performance optimizations enabled: {', '.join(opts_enabled)}")
@@ -94,7 +97,7 @@ def _configure_torch_performance(enable_tf32: bool = True, enable_cudnn_benchmar
         logger.debug(f"Could not configure PyTorch performance: {e}")
 
 
-def _warmup_gpu(model, batch_sizes: list[int] | None = None) -> None:
+def _warmup_gpu(model: Any, batch_sizes: list[int] | None = None) -> None:
     """Warm up GPU to avoid cold-start power spikes.
 
     Args:
@@ -208,7 +211,9 @@ class SentenceTransformerEmbedding:
 
         # Configure PyTorch for maximum performance BEFORE loading model
         if self._is_gpu:
-            _configure_torch_performance(enable_tf32=enable_tf32, enable_cudnn_benchmark=enable_cudnn_benchmark)
+            _configure_torch_performance(
+                enable_tf32=enable_tf32, enable_cudnn_benchmark=enable_cudnn_benchmark
+            )
 
         # Resolve precision
         resolved_precision = self._resolve_precision(precision, resolved_device)
@@ -225,7 +230,9 @@ class SentenceTransformerEmbedding:
             device=resolved_device,
             precision=resolved_precision,
         )
-        logger.info(f"Loading embedding model {model_name} on {resolved_device} ({resolved_precision})")
+        logger.info(
+            f"Loading embedding model {model_name} on {resolved_device} ({resolved_precision})"
+        )
 
         try:
             import torch
@@ -477,7 +484,8 @@ class SentenceTransformerEmbedding:
     @property
     def embedding_dim(self) -> int:
         """Return the dimension of embeddings produced by this model."""
-        return self._model.get_sentence_embedding_dimension()
+        dim = self._model.get_sentence_embedding_dimension()
+        return dim if dim is not None else 384  # Default to common embedding size
 
     @property
     def model_name(self) -> str:
@@ -498,7 +506,9 @@ class SentenceTransformerEmbedding:
 
             if device == "cuda" and torch.cuda.is_available():
                 info["gpu_name"] = torch.cuda.get_device_name(0)
-                info["gpu_memory"] = f"{torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB"
+                info["gpu_memory"] = (
+                    f"{torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB"
+                )
         except Exception:
             pass
 
@@ -562,4 +572,3 @@ def create_embedding_service(
         enable_tf32=enable_tf32,
         enable_cudnn_benchmark=enable_cudnn_benchmark,
     )
-

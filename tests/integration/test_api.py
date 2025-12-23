@@ -1,6 +1,5 @@
 """Integration tests for the API endpoints."""
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -23,9 +22,9 @@ def test_client(tmp_path: Path):
     from rag_service.dependencies import (
         get_chunker,
         get_embedding_service,
-        get_vector_store,
         get_graph_store,
         get_query_router,
+        get_vector_store,
     )
 
     # Reload settings (clears manual cache)
@@ -215,4 +214,3 @@ class TestCollectionEndpoints:
         """Test deleting a nonexistent collection."""
         response = test_client.delete("/api/v1/collections/nonexistent_collection")
         assert response.status_code == 404
-

@@ -21,6 +21,7 @@ Common crash causes and their diagnostic signatures:
 - Driver crash: Events in Windows Event Log, BSOD codes
 """
 
+import contextlib
 import datetime
 import os
 import platform
@@ -175,9 +176,9 @@ class DiskDiagnostics:
         )
 
         if self.read_bytes_sec is not None:
-            io_line = f"    DISK_IO: read={self.read_bytes_sec/1024/1024:.1f}MB/s"
+            io_line = f"    DISK_IO: read={self.read_bytes_sec / 1024 / 1024:.1f}MB/s"
             if self.write_bytes_sec is not None:
-                io_line += f", write={self.write_bytes_sec/1024/1024:.1f}MB/s"
+                io_line += f", write={self.write_bytes_sec / 1024 / 1024:.1f}MB/s"
             lines.append(io_line)
 
         return lines
@@ -292,9 +293,9 @@ class ProcessDiagnostics:
 class WindowsEventInfo:
     """Recent Windows Event Log entries."""
 
-    critical_events: list[dict] = field(default_factory=list)
-    error_events: list[dict] = field(default_factory=list)
-    warning_events: list[dict] = field(default_factory=list)
+    critical_events: list[dict[str, Any]] = field(default_factory=list)
+    error_events: list[dict[str, Any]] = field(default_factory=list)
+    warning_events: list[dict[str, Any]] = field(default_factory=list)
 
     # BSOD info (if recent)
     last_bsod_code: str | None = None
@@ -313,7 +314,9 @@ class WindowsEventInfo:
         if self.critical_events:
             lines.append(f"    CRIT_EVENTS: {len(self.critical_events)} in last hour")
             for event in self.critical_events[:3]:
-                lines.append(f"      - {event.get('source', 'Unknown')}: {event.get('message', '')[:80]}")
+                lines.append(
+                    f"      - {event.get('source', 'Unknown')}: {event.get('message', '')[:80]}"
+                )
 
         return lines
 
@@ -381,10 +384,8 @@ def collect_cpu_diagnostics() -> CPUDiagnostics:
 
         # Utilization
         diag.total_utilization = psutil.cpu_percent(interval=None)
-        try:
+        with contextlib.suppress(Exception):
             diag.per_core_utilization = psutil.cpu_percent(interval=None, percpu=True)
-        except Exception:
-            pass
 
         # Frequency
         try:
@@ -438,13 +439,13 @@ def _get_cpu_name() -> str:
     try:
         if platform.system() == "Windows":
             import winreg
+
             key = winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE,
-                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+                winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
             )
             cpu_name, _ = winreg.QueryValueEx(key, "ProcessorNameString")
             winreg.CloseKey(key)
-            return cpu_name.strip()
+            return str(cpu_name).strip()
         else:
             # Linux
             with open("/proc/cpuinfo") as f:
@@ -462,14 +463,15 @@ def _get_cpu_temperature() -> float | None:
     # Method 1: psutil sensors (Linux primarily)
     try:
         import psutil
+
         temps = psutil.sensors_temperatures()
         if temps:
             # Look for CPU temp in common sensor names
-            for name in ['coretemp', 'cpu_thermal', 'k10temp', 'zenpower']:
+            for name in ["coretemp", "cpu_thermal", "k10temp", "zenpower"]:
                 if name in temps:
                     core_temps = [t.current for t in temps[name] if t.current > 0]
                     if core_temps:
-                        return max(core_temps)
+                        return float(max(core_temps))
     except (ImportError, AttributeError):
         pass
 
@@ -477,11 +479,12 @@ def _get_cpu_temperature() -> float | None:
     if platform.system() == "Windows":
         try:
             import wmi
+
             w = wmi.WMI(namespace="root\\wmi")
             temp_info = w.MSAcpi_ThermalZoneTemperature()
             if temp_info:
                 # Convert from tenths of Kelvin to Celsius
-                temp_k = temp_info[0].CurrentTemperature / 10.0
+                temp_k = float(temp_info[0].CurrentTemperature) / 10.0
                 return temp_k - 273.15
         except Exception:
             pass
@@ -489,6 +492,7 @@ def _get_cpu_temperature() -> float | None:
         # Try OpenHardwareMonitor WMI
         try:
             import wmi
+
             w = wmi.WMI(namespace="root\\OpenHardwareMonitor")
             sensors = w.Sensor()
             for sensor in sensors:
@@ -585,15 +589,11 @@ def collect_process_diagnostics() -> ProcessDiagnostics:
 
         # Handles/FDs
         if platform.system() == "Windows":
-            try:
+            with contextlib.suppress(Exception):
                 diag.handle_count = process.num_handles()
-            except Exception:
-                pass
         else:
-            try:
+            with contextlib.suppress(Exception):
                 diag.fd_count = process.num_fds()
-            except Exception:
-                pass
 
     except ImportError:
         pass
@@ -617,6 +617,7 @@ def collect_hardware_sensors() -> HardwareSensorData:
     # Try OpenHardwareMonitor WMI interface
     try:
         import wmi
+
         w = wmi.WMI(namespace="root\\OpenHardwareMonitor")
         sensors = w.Sensor()
 
@@ -664,6 +665,7 @@ def collect_hardware_sensors() -> HardwareSensorData:
     # Try LibreHardwareMonitor (similar WMI interface)
     try:
         import wmi
+
         w = wmi.WMI(namespace="root\\LibreHardwareMonitor")
         # Similar logic as above...
     except Exception:
@@ -713,7 +715,7 @@ def get_windows_events(hours_back: int = 1) -> WindowsEventInfo:
                     "time": str(event.TimeGenerated),
                     "source": event.SourceName,
                     "event_id": event.EventID,
-                    "message": win32evtlogutil.SafeFormatMessage(event, log_type)[:200]
+                    "message": win32evtlogutil.SafeFormatMessage(event, log_type)[:200],
                 }
 
                 if event.EventType == win32evtlog.EVENTLOG_ERROR_TYPE:
@@ -729,6 +731,7 @@ def get_windows_events(hours_back: int = 1) -> WindowsEventInfo:
                     if "0x" in msg:
                         # Extract hex code
                         import re
+
                         match = re.search(r"0x[0-9A-Fa-f]+", msg)
                         if match:
                             info.last_bsod_code = match.group()
@@ -742,26 +745,30 @@ def get_windows_events(hours_back: int = 1) -> WindowsEventInfo:
         try:
             result = subprocess.run(
                 [
-                    "powershell", "-Command",
+                    "powershell",
+                    "-Command",
                     f"Get-EventLog -LogName System -EntryType Error,Warning "
                     f"-After (Get-Date).AddHours(-{hours_back}) -Newest 10 | "
-                    "Select-Object TimeGenerated,Source,EventID,Message | ConvertTo-Json"
+                    "Select-Object TimeGenerated,Source,EventID,Message | ConvertTo-Json",
                 ],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
             )
             if result.returncode == 0 and result.stdout:
                 import json
+
                 events = json.loads(result.stdout)
                 if isinstance(events, dict):
                     events = [events]
                 for event in events:
-                    info.error_events.append({
-                        "time": event.get("TimeGenerated", ""),
-                        "source": event.get("Source", ""),
-                        "message": str(event.get("Message", ""))[:200]
-                    })
+                    info.error_events.append(
+                        {
+                            "time": event.get("TimeGenerated", ""),
+                            "source": event.get("Source", ""),
+                            "message": str(event.get("Message", ""))[:200],
+                        }
+                    )
         except Exception:
             pass
     except Exception:
@@ -775,12 +782,13 @@ def collect_system_diagnostics() -> SystemDiagnostics:
     diag = SystemDiagnostics(
         timestamp=datetime.datetime.now().isoformat(timespec="milliseconds"),
         hostname=platform.node(),
-        os_info=f"{platform.system()} {platform.release()}"
+        os_info=f"{platform.system()} {platform.release()}",
     )
 
     # Uptime
     try:
         import psutil
+
         boot_time = psutil.boot_time()
         uptime_seconds = datetime.datetime.now().timestamp() - boot_time
         diag.uptime_hours = uptime_seconds / 3600
@@ -821,7 +829,7 @@ class SystemDiagnosticLogger:
             log_dir.mkdir(parents=True, exist_ok=True)
             date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             self._log_path = log_dir / f"{log_name}_{date_str}.log"
-            self._file = open(self._log_path, "a", encoding="utf-8", buffering=1)
+            self._file = open(self._log_path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
             self._write_header()
         except Exception as e:
             print(f"WARNING: Could not create system diagnostic log: {e}", file=sys.stderr)
@@ -858,10 +866,8 @@ class SystemDiagnosticLogger:
         """Flush to disk."""
         if self._file:
             self._file.flush()
-            try:
+            with contextlib.suppress(Exception):
                 os.fsync(self._file.fileno())
-            except Exception:
-                pass
 
     def log_state(self, label: str = "CHECKPOINT", include_all: bool = False) -> SystemDiagnostics:
         """Log current system state."""

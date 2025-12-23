@@ -21,7 +21,7 @@ import os
 import sys
 import threading
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 
 class CrashSafeLogger:
@@ -53,8 +53,8 @@ class CrashSafeLogger:
             date_str = datetime.datetime.now().strftime("%Y%m%d")
             self._log_path = log_dir / f"{log_name}_{date_str}.log"
 
-            # Open in append mode with line buffering
-            self._file = open(self._log_path, "a", encoding="utf-8", buffering=1)
+            # Open in append mode with line buffering (kept open for crash logging)
+            self._file = open(self._log_path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
 
             # Write session header
             self._write_header()
@@ -80,7 +80,7 @@ class CrashSafeLogger:
             import torch
 
             if torch.cuda.is_available():
-                header.append(f"CUDA Available: True")
+                header.append("CUDA Available: True")
                 header.append(f"CUDA Version: {torch.version.cuda}")
                 header.append(f"GPU: {torch.cuda.get_device_name(0)}")
                 props = torch.cuda.get_device_properties(0)
@@ -150,7 +150,7 @@ class CrashSafeLogger:
                 state = (
                     f"           GPU_MEM: allocated={mem_allocated:.2f}GB, "
                     f"reserved={mem_reserved:.2f}GB, total={mem_total:.1f}GB, "
-                    f"percent={100*mem_reserved/mem_total:.1f}%"
+                    f"percent={100 * mem_reserved / mem_total:.1f}%"
                 )
                 self._file.write(state + "\n")
 
@@ -189,7 +189,7 @@ class CrashSafeLogger:
             handle = pynvml.nvmlDeviceGetHandleByIndex(0)
             util = pynvml.nvmlDeviceGetUtilizationRates(handle)
             pynvml.nvmlShutdown()
-            return util.gpu
+            return int(util.gpu)
         except Exception:
             return None
 
@@ -208,8 +208,8 @@ class CrashSafeLogger:
                     backup.unlink()
                 self._log_path.rename(backup)
 
-                # Create new file
-                self._file = open(self._log_path, "a", encoding="utf-8", buffering=1)
+                # Create new file (kept open for crash logging)
+                self._file = open(self._log_path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
                 self._write_header()
         except Exception:
             pass
@@ -239,7 +239,7 @@ class GPUOperationTracer:
         self.details = details
         self.start_time: datetime.datetime | None = None
 
-    def __enter__(self):
+    def __enter__(self) -> "GPUOperationTracer":
         self.start_time = datetime.datetime.now()
         msg = f">>> START: {self.operation}"
         if self.details:
@@ -247,7 +247,10 @@ class GPUOperationTracer:
         self.logger.log(msg, gpu_state=True)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any
+    ) -> None:
+        assert self.start_time is not None  # Set in __enter__
         duration = (datetime.datetime.now() - self.start_time).total_seconds()
 
         if exc_type is not None:
@@ -262,7 +265,7 @@ class GPUOperationTracer:
                 f"<<< DONE: {self.operation} | duration={duration:.3f}s",
                 gpu_state=True,
             )
-        return False  # Don't suppress exceptions
+        # Don't suppress exceptions (return None)
 
 
 # Global logger instance

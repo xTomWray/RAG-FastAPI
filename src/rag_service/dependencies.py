@@ -1,7 +1,7 @@
 """Dependency injection for the RAG service."""
 
 from functools import lru_cache
-from typing import Annotated, Union
+from typing import Annotated
 
 from fastapi import Depends
 
@@ -75,7 +75,7 @@ def get_chunker() -> DocumentChunker:
 
 
 @lru_cache
-def get_graph_store() -> Union[Neo4jGraphStore, InMemoryGraphStore]:
+def get_graph_store() -> Neo4jGraphStore | InMemoryGraphStore:
     """Get the graph store singleton."""
     settings = get_settings()
     if not settings.enable_graph_rag:
@@ -116,7 +116,7 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 EmbeddingServiceDep = Annotated[SentenceTransformerEmbedding, Depends(get_embedding_service)]
 VectorStoreDep = Annotated[VectorStore, Depends(get_vector_store)]
 ChunkerDep = Annotated[DocumentChunker, Depends(get_chunker)]
-GraphStoreDep = Annotated[Union[Neo4jGraphStore, InMemoryGraphStore], Depends(get_graph_store)]
+GraphStoreDep = Annotated[Neo4jGraphStore | InMemoryGraphStore, Depends(get_graph_store)]
 QueryRouterDep = Annotated[QueryRouter, Depends(get_query_router)]
 EntityExtractorDep = Annotated[EntityExtractor, Depends(get_entity_extractor)]
 
@@ -130,4 +130,3 @@ def get_embedding_service_direct() -> SentenceTransformerEmbedding:
 def get_vector_store_direct() -> VectorStore:
     """Get vector store without FastAPI dependency injection."""
     return get_vector_store()
-

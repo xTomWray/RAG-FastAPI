@@ -8,11 +8,12 @@ Power limiting caps the maximum draw, reducing transient severity.
 import logging
 import subprocess
 import sys
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def get_power_info() -> dict | None:
+def get_power_info() -> dict[str, Any] | None:
     """Get current GPU power information using nvidia-smi.
 
     Returns:
@@ -72,7 +73,10 @@ def set_power_limit(watts: int) -> tuple[bool, str]:
         else:
             error = result.stderr.strip() or result.stdout.strip()
             if "Insufficient Permissions" in error or "permission" in error.lower():
-                return False, f"Requires admin privileges. Run as Administrator or use: nvidia-smi -pl {watts}"
+                return (
+                    False,
+                    f"Requires admin privileges. Run as Administrator or use: nvidia-smi -pl {watts}",
+                )
             return False, f"Failed: {error}"
 
     except FileNotFoundError:
@@ -83,7 +87,7 @@ def set_power_limit(watts: int) -> tuple[bool, str]:
         return False, f"Error: {e}"
 
 
-def get_recommended_settings(gpu_name: str | None = None) -> dict:
+def get_recommended_settings(gpu_name: str | None = None) -> dict[str, Any]:
     """Get recommended power and batch settings for GPU/model combination.
 
     Args:
@@ -183,7 +187,7 @@ def apply_power_limit_for_stability(mode: str = "balanced") -> tuple[bool, str, 
     return success, message, target_watts if success else None
 
 
-def print_power_status():
+def print_power_status() -> None:
     """Print current power status and recommendations."""
     info = get_power_info()
 
@@ -191,33 +195,33 @@ def print_power_status():
         print("Could not get GPU power information")
         return
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"GPU: {info['name']}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Current power draw:   {info['power_draw']:.1f}W")
     print(f"Current power limit:  {info['power_limit']:.1f}W")
     print(f"Default power limit:  {info['default_limit']:.1f}W")
     print(f"Maximum power limit:  {info['max_limit']:.1f}W")
-    print(f"Power usage:          {info['power_draw']/info['power_limit']*100:.1f}%")
+    print(f"Power usage:          {info['power_draw'] / info['power_limit'] * 100:.1f}%")
 
     settings = get_recommended_settings(info["name"])
-    print(f"\n{'-'*60}")
+    print(f"\n{'-' * 60}")
     print("Recommended Power Limits for Stability:")
     print(f"  Stable mode:      {settings['power_limit_stable']}W (safest, ~15-20% slower)")
     print(f"  Balanced mode:    {settings['power_limit_balanced']}W (recommended)")
     print(f"  Performance mode: {settings['power_limit_performance']}W (near stock)")
-    print(f"\nRecommended Batch Sizes:")
+    print("\nRecommended Batch Sizes:")
     print(f"  Stable:      {settings['batch_size_stable']}")
     print(f"  Balanced:    {settings['batch_size_balanced']}")
     print(f"  Performance: {settings['batch_size_performance']}")
 
     if settings.get("notes"):
-        print(f"\n{'-'*60}")
+        print(f"\n{'-' * 60}")
         print("Notes:")
         for note in settings["notes"]:
             print(f"  * {note}")
 
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 if __name__ == "__main__":
@@ -231,9 +235,11 @@ if __name__ == "__main__":
         success, msg = set_power_limit(watts)
         print(msg)
     elif sys.argv[1] in ("stable", "balanced", "performance"):
-        success, msg, watts = apply_power_limit_for_stability(sys.argv[1])
+        success, msg, applied_watts = apply_power_limit_for_stability(sys.argv[1])
         print(msg)
-        if success:
-            print(f"Applied {sys.argv[1]} mode ({watts}W)")
+        if success and applied_watts is not None:
+            print(f"Applied {sys.argv[1]} mode ({applied_watts}W)")
     else:
-        print("Usage: python -m rag_service.core.gpu_power [status|set WATTS|stable|balanced|performance]")
+        print(
+            "Usage: python -m rag_service.core.gpu_power [status|set WATTS|stable|balanced|performance]"
+        )

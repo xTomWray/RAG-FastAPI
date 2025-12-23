@@ -10,4 +10,3 @@ router = APIRouter()
 router.include_router(health.router)
 router.include_router(query.router)
 router.include_router(ingest.router)
-

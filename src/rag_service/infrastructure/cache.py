@@ -148,7 +148,8 @@ class RedisCache(CacheBackend):
     async def get(self, key: str) -> bytes | None:
         """Get a value from Redis."""
         redis = await self._get_redis()
-        return await redis.get(key)
+        result = await redis.get(key)
+        return result if result is None else bytes(result)
 
     async def set(self, key: str, value: bytes, ttl: int = 3600) -> None:
         """Set a value in Redis with expiration."""
@@ -172,7 +173,7 @@ class NoOpCache(CacheBackend):
     Useful for disabling caching without changing code.
     """
 
-    async def get(self, key: str) -> bytes | None:
+    async def get(self, _key: str) -> bytes | None:
         """Always returns None."""
         return None
 

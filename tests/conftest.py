@@ -1,8 +1,8 @@
 """Pytest fixtures for RAG service tests."""
 
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import numpy as np
 import pytest
@@ -129,4 +129,3 @@ def client() -> Generator[TestClient, None, None]:
 
     with TestClient(app) as client:
         yield client
-

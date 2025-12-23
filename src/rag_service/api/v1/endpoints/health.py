@@ -163,4 +163,3 @@ async def post_reset_stats() -> dict[str, str]:
     """
     reset_stats()
     return {"status": "ok", "message": "Statistics reset successfully"}
-

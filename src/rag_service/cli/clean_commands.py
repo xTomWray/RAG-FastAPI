@@ -62,12 +62,8 @@ def _remove_pattern(base_path: Path, pattern: str, description: str) -> int:
 
 @app.command()
 def clean(
-    data: bool = typer.Option(
-        False, "--data", help="Also remove vector store data and indices."
-    ),
-    all_clean: bool = typer.Option(
-        False, "--all", "-a", help="Remove everything including data."
-    ),
+    data: bool = typer.Option(False, "--data", help="Also remove vector store data and indices."),
+    all_clean: bool = typer.Option(False, "--all", "-a", help="Remove everything including data."),
 ) -> None:
     """Clean build artifacts and caches.
 

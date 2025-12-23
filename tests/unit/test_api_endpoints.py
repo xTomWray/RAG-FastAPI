@@ -17,7 +17,6 @@ from rag_service.api.v1.schemas import (
     FileIngestRequest,
     QueryRequest,
 )
-from rag_service.core.exceptions import CollectionNotFoundError
 
 
 class TestHealthEndpoints:
@@ -52,10 +51,11 @@ class TestHealthEndpoints:
     @pytest.mark.asyncio
     async def test_system_info(self):
         """Test system info endpoint returns configuration."""
-        with patch("rag_service.api.v1.endpoints.health.get_settings") as mock_settings, \
-             patch("rag_service.api.v1.endpoints.health.get_embedding_service") as mock_embed, \
-             patch("rag_service.api.v1.endpoints.health.get_vector_store") as mock_store:
-
+        with (
+            patch("rag_service.api.v1.endpoints.health.get_settings") as mock_settings,
+            patch("rag_service.api.v1.endpoints.health.get_embedding_service") as mock_embed,
+            patch("rag_service.api.v1.endpoints.health.get_vector_store") as mock_store,
+        ):
             # Mock settings
             mock_settings.return_value = MagicMock(
                 embedding_model="test-model",
@@ -112,14 +112,16 @@ class TestIngestEndpoints:
         """Test successful file ingestion."""
         request = FileIngestRequest(path=str(temp_file), collection="test")
 
-        with patch("rag_service.api.v1.endpoints.ingest.get_chunker") as mock_chunker, \
-             patch("rag_service.api.v1.endpoints.ingest.get_embedding_service") as mock_embed, \
-             patch("rag_service.api.v1.endpoints.ingest.get_vector_store") as mock_store, \
-             patch("rag_service.api.v1.endpoints.ingest.get_graph_store") as mock_graph, \
-             patch("rag_service.api.v1.endpoints.ingest.get_entity_extractor") as mock_extractor:
-
+        with (
+            patch("rag_service.api.v1.endpoints.ingest.get_chunker") as mock_chunker,
+            patch("rag_service.api.v1.endpoints.ingest.get_embedding_service") as mock_embed,
+            patch("rag_service.api.v1.endpoints.ingest.get_vector_store") as mock_store,
+            patch("rag_service.api.v1.endpoints.ingest.get_graph_store"),
+            patch("rag_service.api.v1.endpoints.ingest.get_entity_extractor"),
+        ):
             # Mock chunker - return a list with at least one document
             from rag_service.core.retriever import Document
+
             mock_chunk = Document(
                 text="Test document content for ingestion.",
                 metadata={"source": str(temp_file)},
@@ -130,7 +132,9 @@ class TestIngestEndpoints:
 
             # Mock embedding service
             mock_embed_service = MagicMock()
-            mock_embed_service.embed_documents.return_value = [[0.1] * 384]  # Mock embedding for documents
+            mock_embed_service.embed_documents.return_value = [
+                [0.1] * 384
+            ]  # Mock embedding for documents
             mock_embed.return_value = mock_embed_service
 
             # Mock vector store
@@ -153,12 +157,13 @@ class TestIngestEndpoints:
         request = FileIngestRequest(path="/nonexistent/file.txt", collection="test")
 
         # Must mock all dependencies that are called before the path check
-        with patch("rag_service.api.v1.endpoints.ingest.get_settings") as mock_settings, \
-             patch("rag_service.api.v1.endpoints.ingest.get_chunker") as mock_chunker, \
-             patch("rag_service.api.v1.endpoints.ingest.get_embedding_service") as mock_embed, \
-             patch("rag_service.api.v1.endpoints.ingest.get_vector_store") as mock_store, \
-             patch("rag_service.api.v1.endpoints.ingest.Path") as mock_path:
-
+        with (
+            patch("rag_service.api.v1.endpoints.ingest.get_settings") as mock_settings,
+            patch("rag_service.api.v1.endpoints.ingest.get_chunker") as mock_chunker,
+            patch("rag_service.api.v1.endpoints.ingest.get_embedding_service") as mock_embed,
+            patch("rag_service.api.v1.endpoints.ingest.get_vector_store") as mock_store,
+            patch("rag_service.api.v1.endpoints.ingest.Path") as mock_path,
+        ):
             mock_settings.return_value = MagicMock(enable_graph_rag=False)
             mock_chunker.return_value = MagicMock()
             mock_embed.return_value = MagicMock()
@@ -183,17 +188,23 @@ class TestIngestEndpoints:
             recursive=True,
         )
 
-        with patch("rag_service.api.v1.endpoints.ingest.get_chunker") as mock_chunker, \
-             patch("rag_service.api.v1.endpoints.ingest.get_embedding_service") as mock_embed, \
-             patch("rag_service.api.v1.endpoints.ingest.get_vector_store") as mock_store, \
-             patch("rag_service.api.v1.endpoints.ingest.get_graph_store") as mock_graph, \
-             patch("rag_service.api.v1.endpoints.ingest.get_entity_extractor") as mock_extractor, \
-             patch("rag_service.api.v1.endpoints.ingest.get_settings") as mock_settings:
-
+        with (
+            patch("rag_service.api.v1.endpoints.ingest.get_chunker") as mock_chunker,
+            patch("rag_service.api.v1.endpoints.ingest.get_embedding_service") as mock_embed,
+            patch("rag_service.api.v1.endpoints.ingest.get_vector_store") as mock_store,
+            patch("rag_service.api.v1.endpoints.ingest.get_graph_store"),
+            patch("rag_service.api.v1.endpoints.ingest.get_entity_extractor"),
+            patch("rag_service.api.v1.endpoints.ingest.get_settings") as mock_settings,
+        ):
             # Mock chunker - return documents for each file
             from rag_service.core.retriever import Document
-            mock_chunk1 = Document(text="Content 1", metadata={"source": str(temp_dir / "file1.txt")})
-            mock_chunk2 = Document(text="Content 2", metadata={"source": str(temp_dir / "file2.txt")})
+
+            mock_chunk1 = Document(
+                text="Content 1", metadata={"source": str(temp_dir / "file1.txt")}
+            )
+            mock_chunk2 = Document(
+                text="Content 2", metadata={"source": str(temp_dir / "file2.txt")}
+            )
             mock_chunker_instance = MagicMock()
             # process_directory should return multiple documents
             mock_chunker_instance.process_directory.return_value = [mock_chunk1, mock_chunk2]
@@ -227,12 +238,13 @@ class TestIngestEndpoints:
         )
 
         # Must mock all dependencies that are called before the path check
-        with patch("rag_service.api.v1.endpoints.ingest.get_settings") as mock_settings, \
-             patch("rag_service.api.v1.endpoints.ingest.get_chunker") as mock_chunker, \
-             patch("rag_service.api.v1.endpoints.ingest.get_embedding_service") as mock_embed, \
-             patch("rag_service.api.v1.endpoints.ingest.get_vector_store") as mock_store, \
-             patch("rag_service.api.v1.endpoints.ingest.Path") as mock_path:
-
+        with (
+            patch("rag_service.api.v1.endpoints.ingest.get_settings") as mock_settings,
+            patch("rag_service.api.v1.endpoints.ingest.get_chunker") as mock_chunker,
+            patch("rag_service.api.v1.endpoints.ingest.get_embedding_service") as mock_embed,
+            patch("rag_service.api.v1.endpoints.ingest.get_vector_store") as mock_store,
+            patch("rag_service.api.v1.endpoints.ingest.Path") as mock_path,
+        ):
             mock_settings.return_value = MagicMock(enable_graph_rag=False)
             mock_chunker.return_value = MagicMock()
             mock_embed.return_value = MagicMock()
@@ -261,10 +273,11 @@ class TestQueryEndpoints:
             collection="test",
         )
 
-        with patch("rag_service.api.v1.endpoints.query.get_vector_store") as mock_store, \
-             patch("rag_service.api.v1.endpoints.query.get_embedding_service") as mock_embed, \
-             patch("rag_service.api.v1.endpoints.query.get_query_router") as mock_router:
-
+        with (
+            patch("rag_service.api.v1.endpoints.query.get_vector_store") as mock_store,
+            patch("rag_service.api.v1.endpoints.query.get_embedding_service") as mock_embed,
+            patch("rag_service.api.v1.endpoints.query.get_query_router") as mock_router,
+        ):
             # Mock embedding service
             mock_embed_service = MagicMock()
             mock_embed_service.embed_query.return_value = [0.1] * 384  # Query embedding
@@ -272,6 +285,7 @@ class TestQueryEndpoints:
 
             # Mock vector store
             from rag_service.core.retriever import SearchResult
+
             mock_result = SearchResult(
                 text="MAVLink is a protocol",
                 metadata={"source": "test.pdf"},
@@ -305,9 +319,10 @@ class TestQueryEndpoints:
 
         # Mock all dependencies called before the collection check
         # _perform_vector_search calls get_embedding_service() then get_vector_store()
-        with patch("rag_service.api.v1.endpoints.query.get_embedding_service") as mock_embed, \
-             patch("rag_service.api.v1.endpoints.query.get_vector_store") as mock_store:
-
+        with (
+            patch("rag_service.api.v1.endpoints.query.get_embedding_service") as mock_embed,
+            patch("rag_service.api.v1.endpoints.query.get_vector_store") as mock_store,
+        ):
             # Mock embedding service
             mock_embed.return_value = MagicMock()
 
@@ -325,7 +340,7 @@ class TestQueryEndpoints:
     async def test_query_validation_empty_question(self):
         """Test query validation with empty question."""
         # This should be caught by Pydantic validation
-        with pytest.raises(Exception):  # Pydantic validation error
+        with pytest.raises(ValueError):  # Pydantic validation error
             QueryRequest(question="", top_k=5)
 
     @pytest.mark.asyncio
@@ -338,11 +353,12 @@ class TestQueryEndpoints:
             strategy="hybrid",
         )
 
-        with patch("rag_service.api.v1.endpoints.query.get_vector_store") as mock_store, \
-             patch("rag_service.api.v1.endpoints.query.get_embedding_service") as mock_embed, \
-             patch("rag_service.api.v1.endpoints.query.get_query_router") as mock_router, \
-             patch("rag_service.api.v1.endpoints.query.get_graph_store") as mock_graph:
-
+        with (
+            patch("rag_service.api.v1.endpoints.query.get_vector_store") as mock_store,
+            patch("rag_service.api.v1.endpoints.query.get_embedding_service") as mock_embed,
+            patch("rag_service.api.v1.endpoints.query.get_query_router") as mock_router,
+            patch("rag_service.api.v1.endpoints.query.get_graph_store") as mock_graph,
+        ):
             # Mock embedding service
             mock_embed_service = MagicMock()
             mock_embed_service.embed_query.return_value = [0.1] * 384  # Query embedding
@@ -350,6 +366,7 @@ class TestQueryEndpoints:
 
             # Mock vector store
             from rag_service.core.retriever import SearchResult
+
             mock_result = SearchResult(
                 text="ARM enables TAKEOFF",
                 metadata={"source": "test.pdf"},

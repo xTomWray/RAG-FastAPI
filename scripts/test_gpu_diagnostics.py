@@ -40,6 +40,7 @@ def main() -> None:
     # Initialize diagnostic logger
     try:
         from rag_service.core.gpu_diagnostics import get_diagnostic_logger
+
         diag_log = get_diagnostic_logger()
         diag_log.start_operation("diagnostic_test")
         print("Diagnostic logger initialized - logs will be written to logs/gpu_diag_*.log")
@@ -53,10 +54,6 @@ def main() -> None:
     try:
         from rag_service.core.system_diagnostics import (
             collect_system_diagnostics,
-            collect_cpu_diagnostics,
-            collect_memory_diagnostics,
-            collect_hardware_sensors,
-            get_windows_events,
         )
 
         sys_diag = collect_system_diagnostics()
@@ -88,7 +85,9 @@ def main() -> None:
         print(f"  Used: {mem.used_gb:.1f} GB ({mem.percent_used:.1f}%)")
         print(f"  Available: {mem.available_gb:.1f} GB")
         if mem.swap_total_gb > 0:
-            print(f"  Swap: {mem.swap_used_gb:.1f}/{mem.swap_total_gb:.1f} GB ({mem.swap_percent:.1f}%)")
+            print(
+                f"  Swap: {mem.swap_used_gb:.1f}/{mem.swap_total_gb:.1f} GB ({mem.swap_percent:.1f}%)"
+            )
         print()
 
         # Hardware sensors
@@ -128,6 +127,7 @@ def main() -> None:
     except Exception as e:
         print(f"Error collecting system diagnostics: {e}")
         import traceback
+
         traceback.print_exc()
 
     # Check for CUDA availability
@@ -159,7 +159,7 @@ def main() -> None:
     # Collect GPU diagnostics
     print_header("3. GPU DIAGNOSTICS")
     try:
-        from rag_service.core.gpu_diagnostics import collect_gpu_diagnostics, dump_diagnostics
+        from rag_service.core.gpu_diagnostics import collect_gpu_diagnostics
 
         diag = collect_gpu_diagnostics()
         if diag:
@@ -198,9 +198,13 @@ def main() -> None:
             print()
             print("CLOCKS:")
             if diag.clock_graphics_mhz:
-                print(f"  Graphics: {diag.clock_graphics_mhz} MHz (max: {diag.clock_max_graphics_mhz} MHz)")
+                print(
+                    f"  Graphics: {diag.clock_graphics_mhz} MHz (max: {diag.clock_max_graphics_mhz} MHz)"
+                )
             if diag.clock_memory_mhz:
-                print(f"  Memory: {diag.clock_memory_mhz} MHz (max: {diag.clock_max_memory_mhz} MHz)")
+                print(
+                    f"  Memory: {diag.clock_memory_mhz} MHz (max: {diag.clock_max_memory_mhz} MHz)"
+                )
             print()
             print("PCIe:")
             if diag.pcie_gen:
@@ -239,6 +243,7 @@ def main() -> None:
     except Exception as e:
         print(f"ERROR collecting diagnostics: {e}")
         import traceback
+
         traceback.print_exc()
 
     # Test CUDA operations
@@ -250,14 +255,14 @@ def main() -> None:
 
         # Allocate small tensor
         print("  Allocating small tensor (100MB)...")
-        x = torch.randn(25000000, device='cuda')  # ~100MB
+        x = torch.randn(25000000, device="cuda")  # ~100MB
         torch.cuda.synchronize()
         print(f"  Success! Tensor shape: {x.shape}")
 
         # Matrix multiplication
         print("  Testing matrix multiplication...")
-        a = torch.randn(1000, 1000, device='cuda')
-        b = torch.randn(1000, 1000, device='cuda')
+        a = torch.randn(1000, 1000, device="cuda")
+        b = torch.randn(1000, 1000, device="cuda")
         start = time.perf_counter()
         c = torch.matmul(a, b)
         torch.cuda.synchronize()
@@ -273,6 +278,7 @@ def main() -> None:
     except Exception as e:
         print(f"ERROR during CUDA test: {e}")
         import traceback
+
         traceback.print_exc()
 
     # Check for potential issues
@@ -292,18 +298,24 @@ def main() -> None:
 
         # Swap usage
         if sys_diag.memory.swap_percent > 50:
-            warnings.append(f"Swap usage is high ({sys_diag.memory.swap_percent:.0f}%) - may indicate memory pressure")
+            warnings.append(
+                f"Swap usage is high ({sys_diag.memory.swap_percent:.0f}%) - may indicate memory pressure"
+            )
 
         # VRM temperature (critical for system stability)
         if sys_diag.hardware.vrm_temp_c and sys_diag.hardware.vrm_temp_c > 90:
-            issues.append(f"VRM temperature is dangerously high ({sys_diag.hardware.vrm_temp_c:.0f}°C)")
+            issues.append(
+                f"VRM temperature is dangerously high ({sys_diag.hardware.vrm_temp_c:.0f}°C)"
+            )
         elif sys_diag.hardware.vrm_temp_c and sys_diag.hardware.vrm_temp_c > 80:
             warnings.append(f"VRM temperature is elevated ({sys_diag.hardware.vrm_temp_c:.0f}°C)")
 
         # Voltage rails (should be within 5% of nominal)
         if sys_diag.hardware.voltage_12v:
             if sys_diag.hardware.voltage_12v < 11.4 or sys_diag.hardware.voltage_12v > 12.6:
-                issues.append(f"12V rail out of spec ({sys_diag.hardware.voltage_12v:.2f}V) - PSU issue!")
+                issues.append(
+                    f"12V rail out of spec ({sys_diag.hardware.voltage_12v:.2f}V) - PSU issue!"
+                )
 
         # Recent BSOD
         if sys_diag.windows_events.last_bsod_code:
@@ -312,11 +324,15 @@ def main() -> None:
     if diag:
         # Check temperature
         if diag.temperature_c and diag.temperature_c > 75:
-            issues.append(f"GPU temperature is high ({diag.temperature_c}°C). Consider improving cooling.")
+            issues.append(
+                f"GPU temperature is high ({diag.temperature_c}°C). Consider improving cooling."
+            )
 
         # Check power
         if diag.power_percent and diag.power_percent > 95:
-            issues.append(f"GPU power draw is near limit ({diag.power_percent:.0f}%). May cause throttling.")
+            issues.append(
+                f"GPU power draw is near limit ({diag.power_percent:.0f}%). May cause throttling."
+            )
 
         # Check throttling
         if diag.is_throttled and "IDLE" not in diag.throttle_reasons:
@@ -370,7 +386,7 @@ def main() -> None:
     if diag_log:
         diag_log.end_operation("diagnostic_test", success=True)
         diag_log.close()
-        print(f"Diagnostic logs written to: logs/gpu_diag_*.log")
+        print("Diagnostic logs written to: logs/gpu_diag_*.log")
 
     print("Crash logs will be written to: logs/crash_*.log")
 

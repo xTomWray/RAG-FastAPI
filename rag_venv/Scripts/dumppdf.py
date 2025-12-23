@@ -6,7 +6,8 @@ import os.path
 import re
 import sys
 from argparse import ArgumentParser
-from typing import Any, Container, Dict, Iterable, List, Optional, TextIO, Union, cast
+from collections.abc import Container, Iterable
+from typing import Any, Optional, TextIO, Union, cast
 
 import pdfminer
 from pdfminer.pdfdocument import PDFDocument, PDFNoOutlines, PDFXRefFallback
@@ -160,10 +161,7 @@ def dumpoutline(
     fp = open(fname, "rb")
     parser = PDFParser(fp)
     doc = PDFDocument(parser, password)
-    pages = {
-        page.pageid: pageno
-        for (pageno, page) in enumerate(PDFPage.create_pages(doc), 1)
-    }
+    pages = {page.pageid: pageno for (pageno, page) in enumerate(PDFPage.create_pages(doc), 1)}
 
     def resolve_dest(dest: object) -> Any:
         if isinstance(dest, (str, bytes)):
@@ -212,20 +210,16 @@ LITERAL_EMBEDDEDFILE = LIT("EmbeddedFile")
 
 
 def extractembedded(fname: str, password: str, extractdir: str) -> None:
-    def extract1(objid: int, obj: Dict[str, Any]) -> None:
+    def extract1(objid: int, obj: dict[str, Any]) -> None:
         filename = os.path.basename(obj.get("UF") or cast(bytes, obj.get("F")).decode())
         fileref = obj["EF"].get("UF") or obj["EF"].get("F")
         fileobj = doc.getobj(fileref.objid)
         if not isinstance(fileobj, PDFStream):
-            error_msg = (
-                "unable to process PDF: reference for %r is not a "
-                "PDFStream" % filename
-            )
+            error_msg = "unable to process PDF: reference for %r is not a " "PDFStream" % filename
             raise PDFValueError(error_msg)
         if fileobj.get("Type") is not LITERAL_EMBEDDEDFILE:
             raise PDFValueError(
-                "unable to process PDF: reference for %r "
-                "is not an EmbeddedFile" % (filename),
+                "unable to process PDF: reference for %r " "is not an EmbeddedFile" % (filename),
             )
         path = os.path.join(extractdir, "%.6d-%s" % (objid, filename))
         if os.path.exists(path):
@@ -382,8 +376,7 @@ def create_parser() -> ArgumentParser:
         "-o",
         type=str,
         default="-",
-        help='Path to file where output is written. Or "-" (default) to '
-        "write to stdout.",
+        help='Path to file where output is written. Or "-" (default) to ' "write to stdout.",
     )
     codec_parser = output_params.add_mutually_exclusive_group()
     codec_parser.add_argument(
@@ -411,7 +404,7 @@ def create_parser() -> ArgumentParser:
     return parser
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: Optional[list[str]] = None) -> None:
     parser = create_parser()
     args = parser.parse_args(args=argv)
 

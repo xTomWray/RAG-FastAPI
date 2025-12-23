@@ -27,6 +27,7 @@ RESTART_EXIT_CODE = 42
 def main() -> None:
     """Main entry point - delegates to Typer CLI app."""
     from rag_service.cli.main import app
+
     app()
 
 

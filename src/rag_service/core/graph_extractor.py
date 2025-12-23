@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+from re import Pattern
 from typing import Literal
 
 from rag_service.infrastructure.neo4j_store import Entity, Relationship
@@ -81,15 +82,27 @@ class EntityExtractor:
         self._domain_entities = domain_entities or {}
 
         # Compile patterns
-        self._state_patterns = [re.compile(p, re.IGNORECASE) for p in self.STATE_PATTERNS]
-        self._message_patterns = [re.compile(p, re.IGNORECASE) for p in self.MESSAGE_PATTERNS]
-        self._command_patterns = [re.compile(p, re.IGNORECASE) for p in self.COMMAND_PATTERNS]
-        self._protocol_patterns = [re.compile(p, re.IGNORECASE) for p in self.PROTOCOL_PATTERNS]
-        self._transition_patterns = [
+        self._state_patterns: list[Pattern[str]] = [
+            re.compile(p, re.IGNORECASE) for p in self.STATE_PATTERNS
+        ]
+        self._message_patterns: list[Pattern[str]] = [
+            re.compile(p, re.IGNORECASE) for p in self.MESSAGE_PATTERNS
+        ]
+        self._command_patterns: list[Pattern[str]] = [
+            re.compile(p, re.IGNORECASE) for p in self.COMMAND_PATTERNS
+        ]
+        self._protocol_patterns: list[Pattern[str]] = [
+            re.compile(p, re.IGNORECASE) for p in self.PROTOCOL_PATTERNS
+        ]
+        self._transition_patterns: list[Pattern[str]] = [
             re.compile(p, re.IGNORECASE) for p in self.TRANSITION_PATTERNS
         ]
-        self._trigger_patterns = [re.compile(p, re.IGNORECASE) for p in self.TRIGGER_PATTERNS]
-        self._requires_patterns = [re.compile(p, re.IGNORECASE) for p in self.REQUIRES_PATTERNS]
+        self._trigger_patterns: list[Pattern[str]] = [
+            re.compile(p, re.IGNORECASE) for p in self.TRIGGER_PATTERNS
+        ]
+        self._requires_patterns: list[Pattern[str]] = [
+            re.compile(p, re.IGNORECASE) for p in self.REQUIRES_PATTERNS
+        ]
 
     def extract(
         self,
@@ -127,18 +140,10 @@ class EntityExtractor:
         relationships: list[Relationship] = []
 
         # Extract entities by type
-        self._extract_entity_type(
-            text, self._state_patterns, "State", entities, source
-        )
-        self._extract_entity_type(
-            text, self._message_patterns, "Message", entities, source
-        )
-        self._extract_entity_type(
-            text, self._command_patterns, "Command", entities, source
-        )
-        self._extract_entity_type(
-            text, self._protocol_patterns, "Protocol", entities, source
-        )
+        self._extract_entity_type(text, self._state_patterns, "State", entities, source)
+        self._extract_entity_type(text, self._message_patterns, "Message", entities, source)
+        self._extract_entity_type(text, self._command_patterns, "Command", entities, source)
+        self._extract_entity_type(text, self._protocol_patterns, "Protocol", entities, source)
 
         # Add domain-specific entities if provided
         for entity_type, entity_names in self._domain_entities.items():
@@ -151,14 +156,14 @@ class EntityExtractor:
                     )
 
         # Extract relationships
-        entity_names = set(entities.keys())
+        known_entities = set(entities.keys())
 
         # Transitions
         for pattern in self._transition_patterns:
             for match in pattern.finditer(text):
                 src, tgt = match.group(1), match.group(2)
-                if self._is_valid_entity(src, entity_names) and self._is_valid_entity(
-                    tgt, entity_names
+                if self._is_valid_entity(src, known_entities) and self._is_valid_entity(
+                    tgt, known_entities
                 ):
                     relationships.append(
                         Relationship(
@@ -172,8 +177,8 @@ class EntityExtractor:
         for pattern in self._trigger_patterns:
             for match in pattern.finditer(text):
                 src, tgt = match.group(1), match.group(2)
-                if self._is_valid_entity(src, entity_names) and self._is_valid_entity(
-                    tgt, entity_names
+                if self._is_valid_entity(src, known_entities) and self._is_valid_entity(
+                    tgt, known_entities
                 ):
                     relationships.append(
                         Relationship(
@@ -187,8 +192,8 @@ class EntityExtractor:
         for pattern in self._requires_patterns:
             for match in pattern.finditer(text):
                 src, tgt = match.group(1), match.group(2)
-                if self._is_valid_entity(src, entity_names) and self._is_valid_entity(
-                    tgt, entity_names
+                if self._is_valid_entity(src, known_entities) and self._is_valid_entity(
+                    tgt, known_entities
                 ):
                     relationships.append(
                         Relationship(
@@ -212,7 +217,7 @@ class EntityExtractor:
     def _extract_entity_type(
         self,
         text: str,
-        patterns: list[re.Pattern],
+        patterns: list[re.Pattern[str]],
         entity_type: str,
         entities: dict[str, Entity],
         source: str | None,
@@ -238,9 +243,7 @@ class EntityExtractor:
         if any(name_upper == e.upper() for e in known_entities):
             return True
         # Check if it looks like an entity name (all caps, underscores)
-        if re.match(r"^[A-Z][A-Z0-9_]*$", name_upper) and len(name_upper) >= 2:
-            return True
-        return False
+        return bool(re.match(r"^[A-Z][A-Z0-9_]*$", name_upper) and len(name_upper) >= 2)
 
     def _extract_with_llm(
         self,
@@ -457,4 +460,3 @@ def create_extractor(
     if domain == "mavlink":
         return MAVLinkEntityExtractor(mode=mode, llm_model=llm_model)
     return EntityExtractor(mode=mode, llm_model=llm_model)
-

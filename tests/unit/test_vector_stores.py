@@ -195,4 +195,3 @@ class TestChromaVectorStore:
         collections = store.list_collections()
         assert "chroma1" in collections
         assert "chroma2" in collections
-
