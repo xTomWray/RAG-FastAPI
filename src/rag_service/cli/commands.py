@@ -31,7 +31,7 @@ from rag_service.config import get_settings
 app = typer.Typer(help="Service lifecycle commands")
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def start(
     host: str | None = typer.Option(
         None, "--host", "-h", help="Host to bind to (overrides config)."
@@ -98,7 +98,7 @@ def start(
         remove_pid_file()
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def stop() -> None:
     """Stop the running RAG service.
 
@@ -136,7 +136,7 @@ def stop() -> None:
     remove_pid_file()
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def restart(
     host: str | None = typer.Option(
         None, "--host", "-h", help="Host to bind to (overrides config)."
@@ -176,7 +176,7 @@ def restart(
     start(host=host, port=port, reload=reload, no_ui=no_ui, workers=workers)
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def status() -> None:
     """Show the current service status.
 
@@ -211,7 +211,7 @@ def status() -> None:
     console.print()
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def stats(
     json_output: bool = typer.Option(
         False, "--json", "-j", help="Output as JSON instead of formatted text."

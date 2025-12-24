@@ -141,7 +141,7 @@ def _verify_cuda() -> bool:
         return False
 
 
-@app.command("install")
+@app.command("install")  # type: ignore[untyped-decorator]
 def install(
     dev: bool = typer.Option(
         False, "--dev", "-d", help="Install development dependencies and pre-commit hooks."

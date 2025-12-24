@@ -60,7 +60,7 @@ def _remove_pattern(base_path: Path, pattern: str, description: str) -> int:
     return count
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def clean(
     data: bool = typer.Option(False, "--data", help="Also remove vector store data and indices."),
     all_clean: bool = typer.Option(False, "--all", "-a", help="Remove everything including data."),

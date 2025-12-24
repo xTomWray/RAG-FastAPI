@@ -36,7 +36,7 @@ def _run_docker_command(args: list[str]) -> int:
     return result.returncode
 
 
-@app.command("docker-build")
+@app.command("docker-build")  # type: ignore[untyped-decorator]
 def docker_build(
     gpu: bool = typer.Option(False, "--gpu", "-g", help="Build GPU-enabled image (CUDA)."),
     tag: str = typer.Option("latest", "--tag", "-t", help="Image tag."),
@@ -81,7 +81,7 @@ def docker_build(
         exit_with_error(f"Docker build failed with exit code {exit_code}")
 
 
-@app.command("docker-run")
+@app.command("docker-run")  # type: ignore[untyped-decorator]
 def docker_run(
     gpu: bool = typer.Option(False, "--gpu", "-g", help="Run GPU-enabled image."),
     tag: str = typer.Option("latest", "--tag", "-t", help="Image tag to run."),

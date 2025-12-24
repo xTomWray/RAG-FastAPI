@@ -62,7 +62,7 @@ except ImportError:
     OTEL_AVAILABLE = False
     trace = None  # type: ignore[assignment]
     metrics = None  # type: ignore[assignment]
-    Span = None  # type: ignore[misc, assignment]
+    Span = None  # type: ignore[assignment, misc]
 
 
 def is_telemetry_available() -> bool:

@@ -58,7 +58,7 @@ app.command(name="docker-run")(docker_commands.docker_run)
 app.command(name="clean")(clean_commands.clean)
 
 
-@app.callback(invoke_without_command=True)
+@app.callback(invoke_without_command=True)  # type: ignore[untyped-decorator]
 def main(ctx: typer.Context) -> None:
     """RAG Documentation Service CLI.
 

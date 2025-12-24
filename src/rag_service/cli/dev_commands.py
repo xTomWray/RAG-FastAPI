@@ -37,7 +37,7 @@ def _run_command(args: list[str], check: bool = True) -> int:
     return result.returncode
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def test(
     unit: bool = typer.Option(False, "--unit", "-u", help="Run unit tests only."),
     integration: bool = typer.Option(
@@ -90,7 +90,7 @@ def test(
     raise typer.Exit(exit_code)
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def lint(
     fix: bool = typer.Option(False, "--fix", "-f", help="Automatically fix issues."),
 ) -> None:
@@ -119,7 +119,7 @@ def lint(
     raise typer.Exit(exit_code)
 
 
-@app.command("format")
+@app.command("format")  # type: ignore[untyped-decorator]
 def format_code(
     check: bool = typer.Option(False, "--check", help="Check formatting without modifying files."),
 ) -> None:
@@ -151,7 +151,7 @@ def format_code(
     raise typer.Exit(exit_code)
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def typecheck() -> None:
     """Run type checker (mypy) on the codebase.
 
@@ -171,7 +171,7 @@ def typecheck() -> None:
     raise typer.Exit(exit_code)
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def check() -> None:
     """Run all quality checks (lint, format, typecheck).
 

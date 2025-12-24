@@ -10,7 +10,8 @@
       "Bash(make:*)",
       "Bash(PYTHONPATH=src ./rag_venv/Scripts/python.exe:*)",
       "Bash(./rag_venv/Scripts/pip.exe:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(set CLICK_DISABLE_COLORS=1)"
     ]
   },
   "outputStyle": "Explanatory"

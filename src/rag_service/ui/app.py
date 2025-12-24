@@ -870,7 +870,7 @@ def refresh_collection_dropdown(api_url: str) -> dict[str, Any]:
     """
     choices = get_collection_choices(api_url)
     # Return update with new choices, keeping current value if valid
-    return gr.update(choices=choices, value=choices[0] if choices else "documents")
+    return gr.update(choices=choices, value=choices[0] if choices else "documents")  # type: ignore[no-any-return]
 
 
 def list_collections(api_url: str) -> str:

@@ -440,11 +440,12 @@ def _get_cpu_name() -> str:
         if platform.system() == "Windows":
             import winreg
 
-            key = winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+            key = winreg.OpenKey(  # type: ignore[attr-defined]
+                winreg.HKEY_LOCAL_MACHINE,  # type: ignore[attr-defined]
+                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0",
             )
-            cpu_name, _ = winreg.QueryValueEx(key, "ProcessorNameString")
-            winreg.CloseKey(key)
+            cpu_name, _ = winreg.QueryValueEx(key, "ProcessorNameString")  # type: ignore[attr-defined]
+            winreg.CloseKey(key)  # type: ignore[attr-defined]
             return str(cpu_name).strip()
         else:
             # Linux
