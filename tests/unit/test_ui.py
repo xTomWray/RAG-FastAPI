@@ -178,8 +178,8 @@ class TestIngestFunctions:
         """Test ingest_files with empty file list."""
         from rag_service.ui.app import ingest_files
 
+        # Function returns a tuple directly
         result = ingest_files([], "test_collection", "http://localhost:8080")
-        # Function returns a tuple: (status_message, empty_string)
         assert isinstance(result, tuple)
         assert len(result) == 2
         assert "No files selected" in result[0]  # Check the status message

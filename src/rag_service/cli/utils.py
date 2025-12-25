@@ -157,6 +157,57 @@ def wait_for_process_stop(pid: int, timeout: float = 3.0) -> bool:
     return False
 
 
+def find_pid_by_port(port: int) -> int | None:
+    """Find the process ID using a specific port.
+
+    Args:
+        port: Port number to search for.
+
+    Returns:
+        Process ID if found, None otherwise.
+    """
+    if sys.platform == "win32":
+        try:
+            # Use netstat to find PID by port on Windows
+            result = subprocess.run(
+                ["netstat", "-ano"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return None
+
+            # Parse netstat output to find LISTENING on the port
+            for line in result.stdout.splitlines():
+                if f":{port}" in line and "LISTENING" in line:
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        try:
+                            pid = int(parts[-1])
+                            # Verify it's a Python process (optional check)
+                            return pid
+                        except ValueError:
+                            continue
+        except Exception:
+            return None
+    else:
+        try:
+            # Use lsof on Unix-like systems
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return int(result.stdout.strip().split()[0])
+        except Exception:
+            return None
+
+    return None
+
+
 def run_subprocess(
     args: list[str],
     capture_output: bool = False,

@@ -52,4 +52,11 @@ default_top_k: 5
 entity_extraction_mode: rule_based
 entity_extraction_domain: general
 ollama_model: llama3.2
-enable_graph_rag: false
+enable_graph_rag: true
+enable_telemetry: false
+telemetry_service_name: rag-documentation-service
+telemetry_exporter: console
+telemetry_endpoint: http://localhost:4317
+telemetry_sample_rate: 1.0
+telemetry_log_spans: false
+telemetry_include_gpu_metrics: true

@@ -142,8 +142,10 @@ async def ingest_file(request: FileIngestRequest) -> IngestResponse:
             )
 
         # Generate embeddings
+        logger.info(f"[INGEST] Generating embeddings for {len(documents)} chunks")
         texts = [doc.text for doc in documents]
         embeddings = embedding_service.embed_documents(texts)
+        logger.info(f"[INGEST] Embeddings complete, adding to vector store")
 
         # Add to vector store
         vector_store.add_documents(
@@ -151,12 +153,15 @@ async def ingest_file(request: FileIngestRequest) -> IngestResponse:
             embeddings=embeddings,
             collection=request.collection,
         )
+        logger.info(f"[INGEST] Added to vector store, persisting...")
 
         # Persist vector store
         vector_store.persist()
+        logger.info(f"[INGEST] Persisted, building knowledge graph...")
 
         # Build knowledge graph (if enabled)
         _build_knowledge_graph(documents, request.collection)
+        logger.info(f"[INGEST] Complete, returning response")
 
         return IngestResponse(
             status=IngestStatus.SUCCESS,

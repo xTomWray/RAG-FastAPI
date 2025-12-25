@@ -388,6 +388,7 @@ class SentenceTransformerEmbedding:
             raise
         finally:
             # Record stats
+            logger.info("[EMBED] Recording stats...")
             duration_ms = (time.perf_counter() - start_time) * 1000
             stats = get_stats_collector()
             stats.record_embedding(
@@ -397,6 +398,7 @@ class SentenceTransformerEmbedding:
                 char_count=char_count,
                 success=success,
             )
+            logger.info("[EMBED] Stats recorded, embed_documents complete")
 
     def _embed_documents_safe(
         self,
@@ -421,7 +423,7 @@ class SentenceTransformerEmbedding:
             throttled_batch_processor,
         )
 
-        logger.info(f"Embedding {len(texts)} documents with GPU safeguards")
+        logger.info(f"Embedding {len(texts)} chunks with GPU safeguards")
 
         # Clear memory before starting
         clear_gpu_memory()
@@ -459,11 +461,15 @@ class SentenceTransformerEmbedding:
             min_batch_size=self._min_batch_size,
             progress_callback=progress_callback,
         )
+        logger.info("[EMBED] Throttled processor done, clearing GPU memory...")
 
         # Clear memory after completion
         clear_gpu_memory()
+        logger.info("[EMBED] GPU memory cleared, creating numpy array...")
 
-        return np.array(embedding_list, dtype=np.float32)
+        result = np.array(embedding_list, dtype=np.float32)
+        logger.info(f"[EMBED] Returning embeddings, shape={result.shape}")
+        return result
 
     def embed_query(self, text: str) -> NDArray[np.float32]:
         """Generate embedding for a single query.
@@ -506,9 +512,9 @@ class SentenceTransformerEmbedding:
 
             if device == "cuda" and torch.cuda.is_available():
                 info["gpu_name"] = torch.cuda.get_device_name(0)
-                info["gpu_memory"] = (
-                    f"{torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB"
-                )
+                info[
+                    "gpu_memory"
+                ] = f"{torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB"
         except Exception:
             pass
 

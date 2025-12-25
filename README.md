@@ -54,7 +54,7 @@ pip install -r requirements.txt
 pip install -e ".[dev]"
 ```
 
-> **Note:** Using a virtual environment is strongly recommended to avoid dependency conflicts with other Python projects.
+> **Note:** Save a headache, a virtual environment is strongly recommended to avoid dependency conflicts with other Python projects.
 
 ### Run the Service
 

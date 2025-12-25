@@ -549,12 +549,11 @@ def ingest_files(
     files: list[Any],
     collection: str,
     api_url: str,
-) -> tuple[str, ...]:
+) -> tuple[str, str]:
     """Ingest uploaded files into the RAG service.
 
-    This function copies files to a stable location before processing to avoid
-    race conditions with Gradio's temporary file cleanup. Files are processed
-    concurrently for better performance.
+    Copies files to a stable location before processing to avoid race conditions
+    with Gradio's temporary file cleanup. Files are processed sequentially.
 
     Args:
         files: List of uploaded file objects from Gradio.
@@ -562,12 +561,11 @@ def ingest_files(
         api_url: Base URL of the RAG API service.
 
     Returns:
-        Tuple of (status message).
+        Tuple of (status_message, empty_string) for Gradio outputs.
     """
     import shutil
     import tempfile
     import uuid
-    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     if not files:
         return ("⚠️ No files selected", "")
@@ -576,105 +574,124 @@ def ingest_files(
         collection = "documents"
 
     # Create a stable temp directory for this upload session
-    # This prevents race conditions with Gradio's temp file cleanup
     session_id = uuid.uuid4().hex[:8]
     stable_dir = Path(tempfile.gettempdir()) / f"rag_upload_{session_id}"
     stable_dir.mkdir(parents=True, exist_ok=True)
 
-    # Step 1: Copy all files to stable location FIRST (before any processing)
+    # Step 1: Copy all files to stable location
     file_mapping = {}  # Maps stable_path -> original_name
     copy_errors = []
+    total_files = len(files)
 
     for file in files:
         try:
             src_path = Path(file.name if hasattr(file, "name") else str(file))
             original_name = src_path.name
-
-            # Create unique stable path (handle duplicate names)
             stable_path = stable_dir / f"{uuid.uuid4().hex[:8]}_{original_name}"
-
-            # Copy file to stable location
             shutil.copy2(src_path, stable_path)
             file_mapping[stable_path] = original_name
-
         except Exception as e:
             original_name = Path(str(file)).name if file else "unknown"
             copy_errors.append(f"❌ {original_name}: Failed to copy - {str(e)}")
             logger.warning(f"Failed to copy file {file}: {e}")
 
     if not file_mapping:
-        # All copies failed - cleanup and return
         shutil.rmtree(stable_dir, ignore_errors=True)
         error_msg = "\n".join(copy_errors) if copy_errors else "❌ No files could be copied"
-        return (error_msg,)
+        return (error_msg, "")
 
-    # Step 2: Process files concurrently from stable location
-    results = list(copy_errors)  # Start with any copy errors
+    # Step 2: Process files sequentially
+    results = list(copy_errors)
     success_count = 0
     total_chunks = 0
-
-    def process_single_file(stable_path: Path, original_name: str) -> tuple[str, int, bool]:
-        """Process a single file and return (result_msg, chunks, success)."""
-        try:
-            response = httpx.post(
-                f"{api_url}/api/v1/ingest/file",
-                json={"path": str(stable_path), "collection": collection},
-                timeout=120.0,
-            )
-
-            if response.status_code == 200:
-                data = response.json()
-                chunks = data.get("documents_processed", 0)
-                return (f"✅ {original_name}: {chunks} chunks", chunks, True)
-            else:
-                error = response.json().get("detail", "Unknown error")
-                return (f"❌ {original_name}: {error}", 0, False)
-
-        except httpx.TimeoutException:
-            return (f"❌ {original_name}: Request timeout (>120s)", 0, False)
-        except httpx.ConnectError:
-            return (f"❌ {original_name}: Cannot connect to API", 0, False)
-        except Exception as e:
-            return (f"❌ {original_name}: {str(e)}", 0, False)
-
-    # Use thread pool for concurrent processing (max 4 concurrent to avoid overload)
-    max_workers = min(4, len(file_mapping))
+    files_to_process = len(file_mapping)
 
     try:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks
-            futures = {
-                executor.submit(process_single_file, stable_path, original_name): original_name
-                for stable_path, original_name in file_mapping.items()
-            }
+        for i, (stable_path, original_name) in enumerate(file_mapping.items()):
+            logger.info(f"[UI] Processing file {i + 1}/{files_to_process}: {original_name}")
 
-            # Collect results as they complete
-            for future in as_completed(futures):
-                try:
-                    result_msg, chunks, success = future.result()
-                    results.append(result_msg)
-                    if success:
-                        success_count += 1
-                        total_chunks += chunks
-                except Exception as e:
-                    original_name = futures[future]
-                    results.append(f"❌ {original_name}: Processing error - {str(e)}")
+            try:
+                # Extended timeout: Large documents can take 5-10+ minutes to embed
+                response = httpx.post(
+                    f"{api_url}/api/v1/ingest/file",
+                    json={"path": str(stable_path), "collection": collection},
+                    timeout=httpx.Timeout(900.0, connect=30.0),  # 15 min total, 30s connect
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    chunks = data.get("documents_processed", 0)
+                    results.append(f"✅ {original_name}: {chunks} chunks")
+                    success_count += 1
+                    total_chunks += chunks
+                    logger.info(f"[UI] Completed {original_name}: {chunks} chunks")
+                else:
+                    error = response.json().get("detail", "Unknown error")
+                    results.append(f"❌ {original_name}: {error}")
+                    logger.warning(f"[UI] Failed {original_name}: {error}")
+
+            except httpx.TimeoutException:
+                results.append(
+                    f"❌ {original_name}: Request timeout (>15 min). "
+                    "Try splitting into smaller files."
+                )
+                logger.error(f"[UI] Timeout processing {original_name}")
+            except httpx.ConnectError:
+                results.append(f"❌ {original_name}: Cannot connect to API")
+                logger.error(f"[UI] Connection error for {original_name}")
+            except Exception as e:
+                results.append(f"❌ {original_name}: {str(e)}")
+                logger.error(f"[UI] Error processing {original_name}: {e}")
 
     finally:
-        # Step 3: Clean up stable temp directory
         with contextlib.suppress(Exception):
             shutil.rmtree(stable_dir, ignore_errors=True)
 
-    # Build summary
-    total_files = len(files)
+    # Build final summary
     summary = f"\n{'─' * 40}\n📊 Summary: {success_count}/{total_files} files, {total_chunks:,} total chunks"
-    status_message = "\n".join(results) + summary
+    final_message = "\n".join(results) + summary
 
-    # Clear the global accumulated files list after upload so user can start fresh
+    # Output embedding performance to CLI
+    try:
+        from rag_service.core.stats import get_stats_collector
+
+        stats = get_stats_collector()
+        emb = stats.embeddings.to_dict()
+        gpu_info = stats.get_gpu_info()
+
+        perf_lines = [
+            "",
+            "=" * 50,
+            "📊 Embedding Performance",
+            "=" * 50,
+            f"  Chunks Embedded: {emb.get('total_chunks', 0):,}",
+            f"  Throughput:      {emb.get('chunks_per_second', 0):.1f} chunks/sec",
+            f"  Avg Chunk Size:  {emb.get('avg_chunk_chars', 0):.0f} chars",
+            f"  Batch Size:      {emb.get('avg_batch_size', 0):.0f}",
+            f"  Avg Latency:     {emb.get('avg_duration_ms', 0):.1f}ms",
+            f"  P95 Latency:     {emb.get('p95_duration_ms', 0):.1f}ms",
+        ]
+
+        if gpu_info.get("available"):
+            perf_lines.extend([
+                f"  GPU:             {gpu_info.get('device_name', 'N/A')}",
+                f"  GPU Memory:      {gpu_info.get('memory_allocated_gb', 0):.1f}/{gpu_info.get('memory_total_gb', 0):.1f} GB",
+            ])
+            if "temperature_c" in gpu_info:
+                perf_lines.append(f"  GPU Temp:        {gpu_info['temperature_c']:.0f}°C")
+
+        perf_lines.append("=" * 50)
+
+        for line in perf_lines:
+            logger.info(line)
+    except Exception as e:
+        logger.debug(f"Could not log performance stats: {e}")
+
+    # Clear the accumulated files list
     global accumulated_files
     accumulated_files.clear()
 
-    return (status_message, "")
+    return (final_message, "")
 
 
 def ingest_directory(
@@ -682,6 +699,7 @@ def ingest_directory(
     collection: str,
     recursive: bool,
     api_url: str,
+    progress: gr.Progress = gr.Progress(),
 ) -> str:
     """Ingest all documents from a directory.
 
@@ -690,6 +708,7 @@ def ingest_directory(
         collection: Target collection name.
         recursive: Whether to process subdirectories.
         api_url: Base URL of the RAG API service.
+        progress: Gradio progress bar for real-time updates.
 
     Returns:
         Status message with results.
@@ -701,6 +720,35 @@ def ingest_directory(
         collection = "documents"
 
     try:
+        progress(0.1, desc=f"Scanning directory: {directory_path}...")
+
+        # Count files first (quick operation)
+        dir_path = Path(directory_path)
+        if not dir_path.exists():
+            return f"❌ Directory not found: {directory_path}"
+        if not dir_path.is_dir():
+            return f"❌ Path is not a directory: {directory_path}"
+
+        # Count supported files
+        supported_exts = {
+            ".pdf", ".md", ".txt", ".xml", ".html", ".docx",
+            ".py", ".js", ".json", ".yaml", ".yml", ".rst", ".csv",
+        }
+        if recursive:
+            file_count = sum(
+                1 for f in dir_path.rglob("*")
+                if f.is_file() and f.suffix.lower() in supported_exts
+            )
+        else:
+            file_count = sum(
+                1 for f in dir_path.iterdir()
+                if f.is_file() and f.suffix.lower() in supported_exts
+            )
+
+        progress(0.2, desc=f"Found {file_count} files. Processing...")
+
+        # Extended timeout: Directory ingestion can process many large files
+        # 1800s = 30 min allows for directories with many documents
         response = httpx.post(
             f"{api_url}/api/v1/ingest/directory",
             json={
@@ -708,8 +756,10 @@ def ingest_directory(
                 "collection": collection,
                 "recursive": recursive,
             },
-            timeout=300.0,
+            timeout=httpx.Timeout(1800.0, connect=30.0),  # 30 min total, 30s connect
         )
+
+        progress(1.0, desc="Complete!")
 
         if response.status_code == 200:
             data = response.json()
@@ -725,6 +775,11 @@ def ingest_directory(
 
     except httpx.ConnectError:
         return "❌ Cannot connect to API. Is the service running?"
+    except httpx.TimeoutException:
+        return (
+            "❌ Request timed out (>30 min). "
+            "Directory has too many or too large files. Try indexing in smaller batches."
+        )
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
@@ -959,6 +1014,156 @@ def delete_collection(collection: str, api_url: str) -> str:
         return f"❌ Error: {str(e)}"
 
 
+def get_performance_stats() -> tuple[str, str, dict[str, Any]]:
+    """Get performance statistics for bottleneck analysis.
+
+    Returns:
+        Tuple of (left_column_markdown, right_column_markdown, raw_stats_dict).
+    """
+    from rag_service.core.stats import get_stats_collector
+
+    try:
+        stats = get_stats_collector()
+        summary = stats.get_summary()
+
+        # === LEFT COLUMN: Health, GPU, Embeddings ===
+        left = []
+
+        # Health Status
+        health = summary.get("health", {})
+        status_emoji = {"healthy": "🟢", "degraded": "🟡", "unhealthy": "🔴"}.get(
+            health.get("status", "unknown"), "⚪"
+        )
+        left.append(f"### {status_emoji} Health: {health.get('status', 'unknown').upper()}")
+        left.append(f"Score: {health.get('score', 0)}% | Ops: {health.get('total_operations', 0):,} | Errors: {health.get('total_errors', 0)}\n")
+
+        # GPU Metrics
+        gpu = summary.get("gpu", {})
+        if gpu.get("available"):
+            left.append("### 🎮 GPU")
+            left.append(f"**{gpu.get('device_name', 'Unknown')}**\n")
+            left.append("| Metric | Value |")
+            left.append("|:-------|------:|")
+
+            mem_pct = gpu.get("memory_percent", 0)
+            mem_status = "🟢" if mem_pct < 70 else "🟡" if mem_pct < 85 else "🔴"
+            left.append(f"| Memory | {gpu.get('memory_allocated_gb', 0):.1f}/{gpu.get('memory_total_gb', 0):.1f}GB {mem_status} |")
+
+            if "temperature_c" in gpu:
+                temp = gpu["temperature_c"]
+                temp_status = "🟢" if temp < 70 else "🟡" if temp < 80 else "🔴"
+                left.append(f"| Temp | {temp:.0f}°C {temp_status} |")
+
+            if "power_draw_watts" in gpu:
+                power = gpu["power_draw_watts"]
+                limit = gpu.get("power_limit_watts", 300)
+                power_status = "🟢" if power < limit * 0.7 else "🟡" if power < limit * 0.9 else "🔴"
+                left.append(f"| Power | {power:.0f}/{limit:.0f}W {power_status} |")
+
+            if "utilization_percent" in gpu:
+                util = gpu["utilization_percent"]
+                util_status = "🟢" if util < 70 else "🟡" if util < 90 else "🔴"
+                left.append(f"| Util | {util:.0f}% {util_status} |")
+            left.append("")
+        else:
+            left.append("### 🖥️ Running on CPU\n")
+
+        # Embedding Performance
+        emb = summary.get("operations", {}).get("embeddings", {})
+        left.append("### 🧠 Embeddings")
+        if emb.get("count", 0) > 0:
+            left.append("| Metric | Value |")
+            left.append("|:-------|------:|")
+            left.append(f"| Chunks | {emb.get('total_chunks', 0):,} |")
+            left.append(f"| Throughput | {emb.get('chunks_per_second', 0):.1f}/sec |")
+            left.append(f"| Chunk Size | {emb.get('avg_chunk_chars', 0):.0f} chars |")
+            left.append(f"| Batch Size | {emb.get('avg_batch_size', 0):.0f} |")
+            left.append(f"| Avg Latency | {emb.get('avg_duration_ms', 0):.1f}ms |")
+            p95 = emb.get("p95_duration_ms", 0)
+            p95_status = "🟢" if p95 < 100 else "🟡" if p95 < 300 else "🔴"
+            left.append(f"| P95 Latency | {p95:.1f}ms {p95_status} |")
+            left.append(f"| Success | {emb.get('success_rate', 100):.1f}% |")
+        else:
+            left.append("*No embeddings yet*")
+        left.append("")
+
+        # === RIGHT COLUMN: Search, Ingestion, Errors, Bottlenecks ===
+        right = []
+
+        # Search Performance
+        search = summary.get("operations", {}).get("searches", {})
+        right.append("### 🔍 Search")
+        if search.get("count", 0) > 0:
+            right.append("| Metric | Value |")
+            right.append("|:-------|------:|")
+            right.append(f"| Queries | {search.get('total_queries', 0):,} |")
+            right.append(f"| Avg Latency | {search.get('avg_duration_ms', 0):.1f}ms |")
+            p95 = search.get("p95_duration_ms", 0)
+            p95_status = "🟢" if p95 < 50 else "🟡" if p95 < 150 else "🔴"
+            right.append(f"| P95 Latency | {p95:.1f}ms {p95_status} |")
+            right.append(f"| Avg Results | {search.get('avg_results_per_query', 0):.1f} |")
+            strategies = search.get("strategy_counts", {})
+            if strategies:
+                strat_str = ", ".join(f"{k}:{v}" for k, v in strategies.items())
+                right.append(f"| Strategies | {strat_str} |")
+        else:
+            right.append("*No searches yet*")
+        right.append("")
+
+        # Ingestion Stats
+        ingest = summary.get("operations", {}).get("ingestions", {})
+        right.append("### 📥 Ingestion")
+        if ingest.get("count", 0) > 0:
+            right.append("| Metric | Value |")
+            right.append("|:-------|------:|")
+            right.append(f"| Documents | {ingest.get('total_documents', 0):,} |")
+            right.append(f"| Chunks | {ingest.get('total_chunks', 0):,} |")
+            right.append(f"| Data | {ingest.get('total_mb', 0):.1f} MB |")
+            right.append(f"| Chunks/Doc | {ingest.get('avg_chunks_per_doc', 0):.1f} |")
+        else:
+            right.append("*No ingestions yet*")
+        right.append("")
+
+        # Bottleneck Analysis
+        right.append("### 🎯 Bottlenecks")
+        bottlenecks = []
+
+        if gpu.get("available"):
+            if gpu.get("memory_percent", 0) > 85:
+                bottlenecks.append("🔴 GPU Memory >85%")
+            if gpu.get("temperature_c", 0) > 80:
+                bottlenecks.append("🔴 GPU Temp >80°C")
+            if gpu.get("utilization_percent", 0) > 95:
+                bottlenecks.append("🟡 GPU Saturated")
+
+        if emb.get("p99_duration_ms", 0) > 500:
+            bottlenecks.append("🔴 High P99 Latency")
+        if emb.get("success_rate", 100) < 95:
+            bottlenecks.append("🔴 Low Success Rate")
+        if search.get("p95_duration_ms", 0) > 150:
+            bottlenecks.append("🟡 Slow Search")
+
+        if bottlenecks:
+            for b in bottlenecks:
+                right.append(f"- {b}")
+        else:
+            right.append("🟢 No issues detected")
+        right.append("")
+
+        # Recent Errors
+        errors = summary.get("recent_errors", [])
+        if errors:
+            right.append("### ⚠️ Errors")
+            for err in errors[-3:]:
+                right.append(f"- `{err.get('type', 'Err')}`: {err.get('message', '')[:50]}")
+
+        return "\n".join(left), "\n".join(right), summary
+
+    except Exception as e:
+        error_msg = f"❌ Error: {str(e)}"
+        return error_msg, error_msg, {}
+
+
 def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
     """Create the Gradio interface.
 
@@ -987,7 +1192,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
             font=gr.themes.GoogleFont("Inter"),
         )
 
-        # Add custom CSS for file list scrolling (injected via HTML)
+        # Add custom CSS for UI styling
         gr.HTML(
             value="""
             <style>
@@ -1027,11 +1232,26 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
         with gr.Tabs():
             # Tab 1: Document Upload
             with gr.Tab("📁 Upload Documents") as upload_tab:
+                # Collection selector with refresh button in header
+                with gr.Group():
+                    with gr.Row():
+                        gr.Markdown("### 🎯 Target Collection")
+                        refresh_collections_btn = gr.Button(
+                            "🔄", size="sm", scale=0, min_width=40
+                        )
+                    upload_collection = gr.Dropdown(
+                        choices=["documents"],
+                        value="documents",
+                        label="",
+                        allow_custom_value=True,
+                        info="Select existing or type new name",
+                        show_label=False,
+                    )
+
                 with gr.Row():
-                    # Left column: Drop zone + queue list
+                    # Left column: File upload with queue
                     with gr.Column(scale=1):
-                        gr.Markdown("### 📂 File Queue")
-                        # Compact drop zone - just for receiving files
+                        gr.Markdown("### 📂 Upload Files")
                         file_dropzone = gr.File(
                             file_count="multiple",
                             file_types=[
@@ -1046,61 +1266,32 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                                 ".json",
                                 ".yaml",
                             ],
-                            label="Drop files here (auto-adds to queue below)",
-                            height=80,
+                            label="Drop files here",
+                            height=100,
                         )
-                        # Queue display - shows accumulated files
                         queue_display = gr.HTML(
-                            value='<div class="file-list-container"><em>Queue empty - drop files above</em></div>',
+                            value='<div class="file-list-container"><em>Queue empty</em></div>',
                         )
                         with gr.Row():
                             clear_queue_btn = gr.Button(
-                                "🗑️ Clear Queue", variant="secondary", size="sm"
+                                "🗑️ Clear", variant="secondary", size="sm", scale=1
                             )
-                        with gr.Row():
-                            upload_collection = gr.Dropdown(
-                                choices=["documents"],
-                                value="documents",
-                                label="Collection",
-                                scale=3,
-                                allow_custom_value=True,
-                                info="Select or type a collection name",
+                            upload_btn = gr.Button(
+                                "📤 Upload & Index", variant="primary", scale=2
                             )
-                            refresh_upload_collections_btn = gr.Button(
-                                "🔄",
-                                size="sm",
-                                scale=0,
-                                min_width=40,
-                            )
-                        upload_btn = gr.Button("📤 Upload & Index Files", variant="primary")
 
                     # Right column: Folder indexing
                     with gr.Column(scale=1):
-                        gr.Markdown("### 📁 Index a Folder")
+                        gr.Markdown("### 📁 Index Folder")
                         dir_path = gr.Textbox(
                             label="Directory Path",
-                            placeholder="C:\\path\\to\\documents or /path/to/documents",
+                            placeholder="C:\\docs or /home/user/docs",
                             info="Full path to document folder",
                         )
                         dir_recursive = gr.Checkbox(
                             value=True,
                             label="Include subdirectories",
                         )
-                        with gr.Row():
-                            dir_collection = gr.Dropdown(
-                                choices=["documents"],
-                                value="documents",
-                                label="Collection",
-                                scale=3,
-                                allow_custom_value=True,
-                                info="Select or type a collection name",
-                            )
-                            refresh_dir_collections_btn = gr.Button(
-                                "🔄",
-                                size="sm",
-                                scale=0,
-                                min_width=40,
-                            )
                         dir_btn = gr.Button("📂 Index Folder", variant="primary")
 
                 upload_output = gr.Textbox(
@@ -1121,17 +1312,21 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                 # Upload accumulated files to the API
                 def upload_queued_files(
                     collection: str, api_url: str
-                ) -> tuple[str, str, str, None]:
+                ) -> tuple[str, str, None]:
+                    """Upload queued files to the API."""
                     if not accumulated_files:
                         return (
                             "⚠️ No files in queue",
-                            "",
                             format_file_list_html(accumulated_files),
                             None,
                         )
-                    result = ingest_files(accumulated_files, collection, api_url)
-                    # Append queue HTML and clear the dropzone value
-                    return result + (format_file_list_html(accumulated_files), None)  # type: ignore[return-value]
+                    # Process files and return result
+                    status_msg, _ = ingest_files(accumulated_files, collection, api_url)
+                    return (
+                        status_msg,
+                        format_file_list_html(accumulated_files),
+                        None,
+                    )
 
                 # Clear the queue
                 def clear_queue() -> tuple[str, None]:
@@ -1167,32 +1362,27 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
 
                 dir_btn.click(
                     fn=ingest_directory,
-                    inputs=[dir_path, dir_collection, dir_recursive, api_url_input],
+                    inputs=[dir_path, upload_collection, dir_recursive, api_url_input],
                     outputs=[upload_output],
                 )
 
-                # Refresh collection dropdowns in Upload tab
-                refresh_upload_collections_btn.click(
+                # Refresh collections button
+                refresh_collections_btn.click(
                     fn=refresh_collection_dropdown,
                     inputs=[api_url_input],
                     outputs=[upload_collection],
                 )
-                refresh_dir_collections_btn.click(
+
+                # Also refresh on tab select and app startup
+                upload_tab.select(
                     fn=refresh_collection_dropdown,
                     inputs=[api_url_input],
-                    outputs=[dir_collection],
+                    outputs=[upload_collection],
                 )
-
-                # Auto-load collections when Upload tab is selected (updates both dropdowns)
-                def refresh_both_upload_dropdowns(api_url: str) -> tuple[Any, Any]:
-                    """Refresh both collection dropdowns in Upload tab."""
-                    result = refresh_collection_dropdown(api_url)
-                    return result, result
-
-                upload_tab.select(
-                    fn=refresh_both_upload_dropdowns,
+                app.load(
+                    fn=refresh_collection_dropdown,
                     inputs=[api_url_input],
-                    outputs=[upload_collection, dir_collection],
+                    outputs=[upload_collection],
                 )
 
             # Tab 2: Search
@@ -1688,6 +1878,101 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                     fn=safe_get_system_info,
                     inputs=[api_url_input],
                     outputs=[system_info, sys_status],
+                )
+
+            # Tab 6: Performance / Bottleneck Analysis
+            with gr.Tab("📊 Performance"):
+                # Compact header with controls
+                with gr.Row():
+                    with gr.Column(scale=4):
+                        gr.Markdown("### 📊 Performance Metrics")
+                        auto_refresh_toggle = gr.Checkbox(
+                            label="Auto-refresh (5s)",
+                            value=False,
+                        )
+                    with gr.Column(scale=1, min_width=60):
+                        refresh_perf_btn = gr.Button(
+                            "🔄", size="sm"
+                        )
+                        perf_status = gr.Markdown(
+                            value="",
+                        )
+
+                # Two-column layout for metrics
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        perf_left = gr.Markdown(
+                            value="*Click 🔄 to load*",
+                        )
+                    with gr.Column(scale=1):
+                        perf_right = gr.Markdown(
+                            value="",
+                        )
+
+                # Raw stats with download button
+                with gr.Accordion("📋 Raw Stats", open=False):
+                    perf_json = gr.JSON(
+                        label="",
+                        value={"status": "Click 🔄 to load"},
+                        show_label=False,
+                    )
+                    with gr.Row():
+                        download_stats_btn = gr.DownloadButton(
+                            "⬇️ Download JSON", size="sm", variant="secondary"
+                        )
+
+                def refresh_performance() -> tuple[str, str, dict[str, Any], str]:
+                    """Refresh performance stats and return formatted output."""
+                    import datetime
+
+                    left_md, right_md, raw_stats = get_performance_stats()
+                    timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+                    return left_md, right_md, raw_stats, f"*{timestamp}*"
+
+                def download_stats() -> str:
+                    """Create downloadable stats JSON file."""
+                    import datetime
+                    import tempfile
+
+                    _, _, raw_stats = get_performance_stats()
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"rag_stats_{timestamp}.json"
+
+                    temp_path = Path(tempfile.gettempdir()) / filename
+                    with open(temp_path, "w") as f:
+                        json.dump(raw_stats, f, indent=2, default=str)
+
+                    return str(temp_path)
+
+                # Manual refresh button
+                refresh_perf_btn.click(
+                    fn=refresh_performance,
+                    inputs=[],
+                    outputs=[perf_left, perf_right, perf_json, perf_status],
+                )
+
+                # Download button - DownloadButton automatically triggers download
+                download_stats_btn.click(
+                    fn=download_stats,
+                    inputs=[],
+                    outputs=[download_stats_btn],
+                )
+
+                # Auto-refresh timer - only refreshes when checkbox is enabled
+                def timed_refresh(
+                    is_enabled: bool,
+                ) -> tuple[Any, Any, Any, Any]:
+                    """Refresh stats only if auto-refresh is enabled."""
+                    if is_enabled:
+                        return refresh_performance()
+                    return gr.update(), gr.update(), gr.update(), gr.update()  # type: ignore[return-value]
+
+                # Timer runs but only updates when checkbox is checked
+                perf_timer = gr.Timer(value=5)
+                perf_timer.tick(
+                    fn=timed_refresh,
+                    inputs=[auto_refresh_toggle],
+                    outputs=[perf_left, perf_right, perf_json, perf_status],
                 )
 
         gr.Markdown(

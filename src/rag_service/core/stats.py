@@ -115,30 +115,31 @@ class OperationStats:
 
 @dataclass
 class EmbeddingStats:
-    """Extended statistics for embedding operations."""
+    """Extended statistics for embedding operations.
+
+    Tracks chunk embedding performance - chunks are pieces of documents
+    after splitting, which get embedded into vectors.
+    """
 
     ops: OperationStats = field(default_factory=OperationStats)
-    total_texts: int = 0
-    total_tokens_estimated: int = 0  # Rough estimate based on character count
+    total_chunks: int = 0  # Number of chunks embedded
+    total_chars: int = 0  # Total characters processed
     total_batches: int = 0
     avg_batch_size: float = 0.0
 
     def record(
         self,
         duration_ms: float,
-        num_texts: int,
+        num_texts: int,  # Actually chunks
         batch_size: int,
         char_count: int = 0,
         success: bool = True,
     ) -> None:
         """Record an embedding operation."""
         self.ops.record(duration_ms, success)
-        self.total_texts += num_texts
+        self.total_chunks += num_texts
+        self.total_chars += char_count
         self.total_batches += 1
-
-        # Estimate tokens (roughly 4 chars per token for English)
-        if char_count > 0:
-            self.total_tokens_estimated += char_count // 4
 
         # Update running average batch size
         self.avg_batch_size = (
@@ -146,21 +147,32 @@ class EmbeddingStats:
         ) / self.total_batches
 
     @property
-    def texts_per_second(self) -> float:
-        """Average texts embedded per second."""
+    def chunks_per_second(self) -> float:
+        """Average chunks embedded per second."""
         if self.ops.total_duration_ms == 0:
             return 0.0
-        return self.total_texts / (self.ops.total_duration_ms / 1000)
+        return self.total_chunks / (self.ops.total_duration_ms / 1000)
+
+    @property
+    def avg_chunk_chars(self) -> float:
+        """Average characters per chunk."""
+        if self.total_chunks == 0:
+            return 0.0
+        return self.total_chars / self.total_chunks
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             **self.ops.to_dict(),
-            "total_texts": self.total_texts,
-            "total_tokens_estimated": self.total_tokens_estimated,
+            "total_chunks": self.total_chunks,
+            "total_chars": self.total_chars,
+            "avg_chunk_chars": round(self.avg_chunk_chars, 0),
             "total_batches": self.total_batches,
             "avg_batch_size": round(self.avg_batch_size, 1),
-            "texts_per_second": round(self.texts_per_second, 1),
+            "chunks_per_second": round(self.chunks_per_second, 1),
+            # Legacy keys for compatibility
+            "total_texts": self.total_chunks,
+            "texts_per_second": round(self.chunks_per_second, 1),
         }
 
 
@@ -253,15 +265,18 @@ class StatsCollector:
     """Central statistics collector for the RAG service.
 
     Thread-safe collector that aggregates metrics from all components.
+    Uses RLock (reentrant lock) to allow nested lock acquisition within
+    the same thread, preventing deadlocks when methods like get_summary()
+    call other methods that also acquire the lock.
     """
 
     _instance: "StatsCollector | None" = None
-    _lock = threading.Lock()
+    _class_lock = threading.Lock()  # For singleton creation only
     _initialized: bool = False
 
     def __new__(cls) -> "StatsCollector":
         if cls._instance is None:
-            with cls._lock:
+            with cls._class_lock:
                 if cls._instance is None:
                     cls._instance = super().__new__(cls)
                     cls._instance._initialized = False
@@ -271,7 +286,9 @@ class StatsCollector:
         if self._initialized:
             return
 
-        self._lock = threading.Lock()
+        # Use RLock to allow reentrant locking (same thread can acquire multiple times)
+        # This prevents deadlock when get_summary() -> get_gpu_info() -> record_gpu_sample()
+        self._lock = threading.RLock()
         self._start_time = time.time()
 
         # Core operation stats
@@ -647,8 +664,9 @@ class StatsCollector:
         if emb["count"] > 0:
             lines.append("\n🧠 Embeddings:")
             lines.append(f"   Operations: {emb['count']:,}")
-            lines.append(f"   Texts Embedded: {emb['total_texts']:,}")
-            lines.append(f"   Throughput: {emb['texts_per_second']:.1f} texts/sec")
+            lines.append(f"   Chunks Embedded: {emb['total_chunks']:,}")
+            lines.append(f"   Throughput: {emb['chunks_per_second']:.1f} chunks/sec")
+            lines.append(f"   Avg Chunk Size: {emb['avg_chunk_chars']:.0f} chars")
             lines.append(
                 f"   Latency: avg={emb['avg_duration_ms']:.1f}ms, p95={emb['p95_duration_ms']:.1f}ms"
             )

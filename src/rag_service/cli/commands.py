@@ -104,10 +104,29 @@ def stop() -> None:
 
     Sends a termination signal to the running service process.
     Falls back to force kill if graceful shutdown fails.
+    Automatically finds PID by port if PID file is missing.
     """
+    from rag_service.cli.utils import find_pid_by_port
+
     settings = get_settings()
     port = settings.port
     pid = read_pid_file()
+
+    # If no PID file, try to find PID by port
+    if not pid:
+        if check_service_health(port):
+            print_info(f"PID file not found, searching for process on port {port}...")
+            pid = find_pid_by_port(port)
+            if pid and is_process_running(pid):
+                print_info(f"Found service process (PID: {pid})")
+            else:
+                print_warning(f"Service is running on port {port} but could not find PID.")
+                print_info("Please stop the service manually or kill the process.")
+                raise typer.Exit(1)
+        else:
+            print_info("No running service found.")
+            remove_pid_file()
+            return
 
     if pid and is_process_running(pid):
         print_info(f"Stopping service (PID: {pid})...")
@@ -126,13 +145,8 @@ def stop() -> None:
         print_success("Service force-stopped.")
         return
 
-    # Check if service is responding but PID file is missing
-    if check_service_health(port):
-        print_warning(f"Service is running on port {port} but PID file not found.")
-        print_info("Please stop the service manually or kill the process.")
-        raise typer.Exit(1)
-
-    print_info("No running service found.")
+    # PID file exists but process is not running
+    print_info("PID file found but process is not running. Cleaning up PID file.")
     remove_pid_file()
 
 
@@ -341,8 +355,9 @@ def _format_stats_output(data: dict[str, Any]) -> None:
         emb_table.add_column("Value", style="green")
 
         emb_table.add_row("Operations", f"{emb.get('count', 0):,}")
-        emb_table.add_row("Texts Embedded", f"{emb.get('total_texts', 0):,}")
-        emb_table.add_row("Throughput", f"{emb.get('texts_per_second', 0):.1f} texts/sec")
+        emb_table.add_row("Chunks Embedded", f"{emb.get('total_chunks', 0):,}")
+        emb_table.add_row("Throughput", f"{emb.get('chunks_per_second', 0):.1f} chunks/sec")
+        emb_table.add_row("Avg Chunk Size", f"{emb.get('avg_chunk_chars', 0):.0f} chars")
         emb_table.add_row("Avg Latency", f"{emb.get('avg_duration_ms', 0):.1f}ms")
         emb_table.add_row("P95 Latency", f"{emb.get('p95_duration_ms', 0):.1f}ms")
         emb_table.add_row("Success Rate", f"{emb.get('success_rate', 100):.1f}%")
