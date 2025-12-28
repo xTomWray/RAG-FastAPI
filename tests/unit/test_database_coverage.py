@@ -20,11 +20,11 @@ from rag_service.infrastructure.neo4j_store import (
     Relationship,
 )
 
-# FAISS has a known bug on macOS ARM64 that causes crashes when searching
-# with top_k values in certain edge cases
+# FAISS has known crashes on macOS ARM64 (Apple Silicon) when calling search()
 IS_MACOS_ARM64 = sys.platform == "darwin"
 
 
+@pytest.mark.skipif(IS_MACOS_ARM64, reason="FAISS crashes on macOS ARM64")
 class TestFAISSDatabaseCoverage:
     """Comprehensive FAISS database tests."""
 
@@ -80,9 +80,6 @@ class TestFAISSDatabaseCoverage:
         with pytest.raises(CollectionNotFoundError):
             store.search(query_embedding, top_k=5, collection="empty")
 
-    @pytest.mark.skipif(
-        IS_MACOS_ARM64, reason="FAISS crashes on macOS ARM64 with certain top_k values"
-    )
     def test_search_top_k_larger_than_collection(
         self, store: FAISSVectorStore, sample_documents, sample_embeddings
     ):
