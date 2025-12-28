@@ -30,9 +30,19 @@ def _remove_directory(path: Path, description: str) -> bool:
         True if directory was removed.
     """
     if path.exists() and path.is_dir():
-        shutil.rmtree(path)
-        console.print(f"  [dim]Removed:[/dim] {description} ({path})")
-        return True
+        try:
+            shutil.rmtree(path, ignore_errors=False)
+            console.print(f"  [dim]Removed:[/dim] {description} ({path})")
+            return True
+        except OSError:
+            # On Windows, files may be locked by other processes
+            # Try with ignore_errors as fallback
+            shutil.rmtree(path, ignore_errors=True)
+            if not path.exists():
+                console.print(f"  [dim]Removed:[/dim] {description} ({path})")
+                return True
+            console.print(f"  [dim]Skipped:[/dim] {description} (files in use)")
+            return False
     return False
 
 
@@ -48,15 +58,39 @@ def _remove_pattern(base_path: Path, pattern: str, description: str) -> int:
         Number of items removed.
     """
     count = 0
-    for path in base_path.rglob(pattern):
-        if path.is_dir():
-            shutil.rmtree(path)
-        else:
-            path.unlink()
-        count += 1
+    skipped = 0
+
+    # Collect paths first, handling inaccessible directories (e.g., WSL symlinks on Windows)
+    paths_to_remove = []
+    try:
+        for path in base_path.rglob(pattern):
+            paths_to_remove.append(path)
+    except OSError:
+        # rglob may fail on inaccessible paths (e.g., WSL symlinks on Windows)
+        pass
+
+    for path in paths_to_remove:
+        try:
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=False)
+            else:
+                path.unlink()
+            count += 1
+        except OSError:
+            # On Windows, files may be locked by other processes
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+                if not path.exists():
+                    count += 1
+                else:
+                    skipped += 1
+            else:
+                skipped += 1
 
     if count > 0:
         console.print(f"  [dim]Removed:[/dim] {count} {description}")
+    if skipped > 0:
+        console.print(f"  [dim]Skipped:[/dim] {skipped} {description} (files in use)")
     return count
 
 
@@ -100,9 +134,13 @@ def clean(
                 if _remove_directory(cache_path, cache_dir):
                     removed_count += 1
             else:
-                cache_path.unlink()
-                console.print(f"  [dim]Removed:[/dim] {cache_dir}")
-                removed_count += 1
+                try:
+                    cache_path.unlink()
+                    console.print(f"  [dim]Removed:[/dim] {cache_dir}")
+                    removed_count += 1
+                except OSError:
+                    # On Windows, file may be locked by another process
+                    console.print(f"  [dim]Skipped:[/dim] {cache_dir} (file in use)")
 
     # Src egg-info
     for path in (project_root / "src").glob("*.egg-info"):

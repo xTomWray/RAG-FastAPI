@@ -1,0 +1,50 @@
+# RAG Documentation Service - Linux Test Environment
+# Mirrors GitHub Actions ubuntu-latest runner for local CI testing
+#
+# Usage:
+#   docker build -f tests/docker/Dockerfile.linux-test -t rag-test-linux .
+#   docker run --rm rag-test-linux
+#
+# Or via Makefile:
+#   make test-linux
+
+ARG PYTHON_VERSION=3.11
+
+# =============================================================================
+# Test environment matching GitHub Actions ubuntu-latest
+# =============================================================================
+FROM python:${PYTHON_VERSION}-slim AS test-runner
+
+# Set environment variables for reproducible builds
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    CLICK_DISABLE_COLORS=1 \
+    PYTHONPATH=/app/src
+
+WORKDIR /app
+
+# Install system dependencies (matching CI workflow lines 68-72)
+# libmagic1 is required for python-magic file type detection
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libmagic1 \
+    poppler-utils \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy dependency files first for Docker layer caching
+COPY pyproject.toml ./
+COPY requirements.txt ./
+COPY README.md ./
+
+# Install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install -e ".[dev]"
+
+# Copy source code and tests
+COPY src/ src/
+COPY tests/ tests/
+
+# Default command: run all tests (matching CI workflow)
+CMD ["pytest", "tests/unit/", "-v", "--tb=short"]

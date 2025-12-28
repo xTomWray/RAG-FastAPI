@@ -5,8 +5,10 @@
 # All logic is implemented in the Python CLI for cross-platform support.
 
 .PHONY: install dev gpu all test test-unit test-integration test-cov \
-        lint lint-fix format format-check typecheck check pre-commit \
-        run run-prod docker-build docker-run clean clean-data help
+        lint lint-fix format format-check typecheck check \
+        pre-commit pre-commit-hooks pre-commit-quick \
+        run run-prod docker-build docker-run clean clean-data help \
+        test-linux test-linux-all test-windows ci-local ci-local-full
 
 # Default target
 .DEFAULT_GOAL := help
@@ -55,6 +57,32 @@ test-cov: ## Run tests with coverage report
 	$(PYTHON) -m rag_service test --coverage
 
 #---------------------------------------------------------------------------
+# Local CI Testing (Docker-based)
+#---------------------------------------------------------------------------
+
+test-linux: ## Run tests in Linux Docker container (Python 3.11)
+	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit test-py311
+
+test-linux-all: ## Run tests in Linux Docker for all Python versions
+	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit test-py310 test-py311 test-py312
+
+test-windows: ## Run tests natively on Windows
+	$(PYTHON) -m pytest tests/unit/ -v --tb=short
+
+ci-local: ## Run local CI (lint, typecheck, tests) - Linux via Docker
+	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit ci-full
+
+ci-local-full: ## Run full local CI on both Windows (native) and Linux (Docker)
+	@echo "=== Running Windows CI ==="
+	$(PYTHON) -m ruff check src/ tests/
+	$(PYTHON) -m ruff format --check src/ tests/
+	$(PYTHON) -m mypy src/ --ignore-missing-imports
+	$(PYTHON) -m pytest tests/unit/ -v --tb=short
+	@echo "=== Running Linux CI (Docker) ==="
+	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit ci-full
+	@echo "=== All CI Checks Passed! ==="
+
+#---------------------------------------------------------------------------
 # Code Quality
 #---------------------------------------------------------------------------
 
@@ -76,8 +104,23 @@ typecheck: ## Run type checker
 check: ## Run all checks (lint, format, typecheck)
 	$(PYTHON) -m rag_service check
 
-pre-commit: ## Run pre-commit hooks on all files
+pre-commit: ## Run pre-commit checks: Windows native + Linux Docker tests
+	@echo "=== Pre-commit: Windows Native Checks ==="
+	$(PYTHON) -m ruff check src/ tests/
+	$(PYTHON) -m ruff format --check src/ tests/
+	$(PYTHON) -m mypy src/ --ignore-missing-imports
+	$(PYTHON) -m pytest tests/unit/ -v --tb=short
+	@echo "=== Pre-commit: Linux Docker Checks ==="
+	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit ci-full
+	@echo "=== Pre-commit Checks Passed! Ready to commit. ==="
+
+pre-commit-hooks: ## Run pre-commit hooks only (without Docker)
 	pre-commit run --all-files
+
+pre-commit-quick: ## Quick pre-commit (Windows only, no Docker)
+	$(PYTHON) -m ruff check src/ tests/
+	$(PYTHON) -m ruff format --check src/ tests/
+	$(PYTHON) -m pytest tests/unit/ -v --tb=short
 
 #---------------------------------------------------------------------------
 # Running

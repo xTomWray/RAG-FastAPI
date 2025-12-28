@@ -14,7 +14,10 @@
       "Bash(set CLICK_DISABLE_COLORS=1)",
       "Bash(curl:*)",
       "Bash(netstat:*)",
-      "Bash(taskkill //F //PID 39704)"
+      "Bash(taskkill //F //PID 39704)",
+      "Bash(mkdir:*)",
+      "Bash(docker:*)",
+      "Bash(docker-compose:*)"
     ]
   },
   "outputStyle": "Explanatory"

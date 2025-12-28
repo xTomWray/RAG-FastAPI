@@ -565,6 +565,7 @@ def ingest_files(
     """
     import shutil
     import tempfile
+    import time
     import uuid
 
     if not files:
@@ -578,7 +579,7 @@ def ingest_files(
     stable_dir = Path(tempfile.gettempdir()) / f"rag_upload_{session_id}"
     stable_dir.mkdir(parents=True, exist_ok=True)
 
-    # Step 1: Copy all files to stable location
+    # Step 1: Copy all files to stable location with retry logic
     file_mapping = {}  # Maps stable_path -> original_name
     copy_errors = []
     total_files = len(files)
@@ -588,8 +589,56 @@ def ingest_files(
             src_path = Path(file.name if hasattr(file, "name") else str(file))
             original_name = src_path.name
             stable_path = stable_dir / f"{uuid.uuid4().hex[:8]}_{original_name}"
-            shutil.copy2(src_path, stable_path)
+
+            # Retry logic: Gradio may still be writing the file
+            max_retries = 3
+            retry_delay = 0.5  # seconds
+            copied = False
+
+            for attempt in range(max_retries):
+                # Check if source file exists and is readable
+                if not src_path.exists():
+                    if attempt < max_retries - 1:
+                        logger.debug(
+                            f"Source file not found (attempt {attempt + 1}), "
+                            f"waiting {retry_delay}s: {src_path}"
+                        )
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        raise FileNotFoundError(
+                            f"Source file not found after {max_retries} attempts: {src_path}"
+                        )
+
+                # Check if file has content (not empty/truncated)
+                src_size = src_path.stat().st_size
+                if src_size == 0:
+                    if attempt < max_retries - 1:
+                        logger.debug(
+                            f"Source file is empty (attempt {attempt + 1}), "
+                            f"waiting {retry_delay}s: {src_path}"
+                        )
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        raise ValueError(f"Source file is empty: {src_path}")
+
+                # Copy the file
+                shutil.copy2(src_path, stable_path)
+
+                # Verify the copy succeeded and has same size
+                if stable_path.exists() and stable_path.stat().st_size == src_size:
+                    copied = True
+                    break
+                elif attempt < max_retries - 1:
+                    logger.debug(f"Copy verification failed (attempt {attempt + 1}), retrying...")
+                    time.sleep(retry_delay)
+
+            if not copied:
+                raise OSError(f"Failed to copy file after {max_retries} attempts")
+
             file_mapping[stable_path] = original_name
+
         except Exception as e:
             original_name = Path(str(file)).name if file else "unknown"
             copy_errors.append(f"❌ {original_name}: Failed to copy - {str(e)}")
@@ -608,7 +657,13 @@ def ingest_files(
 
     try:
         for i, (stable_path, original_name) in enumerate(file_mapping.items()):
-            logger.info(f"[UI] Processing file {i + 1}/{files_to_process}: {original_name}")
+            # Calculate percentage progress
+            pct_complete = ((i) / files_to_process) * 100
+            pct_after = ((i + 1) / files_to_process) * 100
+            logger.info(
+                f"[UI] [{pct_complete:.0f}%] Processing file {i + 1}/{files_to_process}: "
+                f"{original_name}"
+            )
 
             try:
                 # Extended timeout: Large documents can take 5-10+ minutes to embed
@@ -624,31 +679,45 @@ def ingest_files(
                     results.append(f"✅ {original_name}: {chunks} chunks")
                     success_count += 1
                     total_chunks += chunks
-                    logger.info(f"[UI] Completed {original_name}: {chunks} chunks")
+                    logger.info(
+                        f"[UI] [{pct_after:.0f}%] Completed {original_name}: "
+                        f"{chunks} chunks ({success_count}/{files_to_process} done)"
+                    )
                 else:
                     error = response.json().get("detail", "Unknown error")
                     results.append(f"❌ {original_name}: {error}")
-                    logger.warning(f"[UI] Failed {original_name}: {error}")
+                    logger.warning(f"[UI] [{pct_after:.0f}%] Failed {original_name}: {error}")
 
             except httpx.TimeoutException:
                 results.append(
                     f"❌ {original_name}: Request timeout (>15 min). "
                     "Try splitting into smaller files."
                 )
-                logger.error(f"[UI] Timeout processing {original_name}")
+                logger.error(f"[UI] [{pct_after:.0f}%] Timeout processing {original_name}")
             except httpx.ConnectError:
                 results.append(f"❌ {original_name}: Cannot connect to API")
-                logger.error(f"[UI] Connection error for {original_name}")
+                logger.error(f"[UI] [{pct_after:.0f}%] Connection error for {original_name}")
             except Exception as e:
                 results.append(f"❌ {original_name}: {str(e)}")
-                logger.error(f"[UI] Error processing {original_name}: {e}")
+                logger.error(f"[UI] [{pct_after:.0f}%] Error processing {original_name}: {e}")
 
     finally:
         with contextlib.suppress(Exception):
             shutil.rmtree(stable_dir, ignore_errors=True)
 
-    # Build final summary
-    summary = f"\n{'─' * 40}\n📊 Summary: {success_count}/{total_files} files, {total_chunks:,} total chunks"
+    # Log completion
+    logger.info(
+        f"[UI] [100%] Upload complete: {success_count}/{total_files} files, "
+        f"{total_chunks:,} chunks indexed"
+    )
+
+    # Build final summary with percentage
+    success_pct = (success_count / total_files * 100) if total_files > 0 else 0
+    summary = (
+        f"\n{'─' * 40}\n"
+        f"📊 Summary: {success_count}/{total_files} files ({success_pct:.0f}% success), "
+        f"{total_chunks:,} total chunks"
+    )
     final_message = "\n".join(results) + summary
 
     # Output embedding performance to CLI
@@ -673,10 +742,12 @@ def ingest_files(
         ]
 
         if gpu_info.get("available"):
-            perf_lines.extend([
-                f"  GPU:             {gpu_info.get('device_name', 'N/A')}",
-                f"  GPU Memory:      {gpu_info.get('memory_allocated_gb', 0):.1f}/{gpu_info.get('memory_total_gb', 0):.1f} GB",
-            ])
+            perf_lines.extend(
+                [
+                    f"  GPU:             {gpu_info.get('device_name', 'N/A')}",
+                    f"  GPU Memory:      {gpu_info.get('memory_allocated_gb', 0):.1f}/{gpu_info.get('memory_total_gb', 0):.1f} GB",
+                ]
+            )
             if "temperature_c" in gpu_info:
                 perf_lines.append(f"  GPU Temp:        {gpu_info['temperature_c']:.0f}°C")
 
@@ -731,18 +802,27 @@ def ingest_directory(
 
         # Count supported files
         supported_exts = {
-            ".pdf", ".md", ".txt", ".xml", ".html", ".docx",
-            ".py", ".js", ".json", ".yaml", ".yml", ".rst", ".csv",
+            ".pdf",
+            ".md",
+            ".txt",
+            ".xml",
+            ".html",
+            ".docx",
+            ".py",
+            ".js",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".rst",
+            ".csv",
         }
         if recursive:
             file_count = sum(
-                1 for f in dir_path.rglob("*")
-                if f.is_file() and f.suffix.lower() in supported_exts
+                1 for f in dir_path.rglob("*") if f.is_file() and f.suffix.lower() in supported_exts
             )
         else:
             file_count = sum(
-                1 for f in dir_path.iterdir()
-                if f.is_file() and f.suffix.lower() in supported_exts
+                1 for f in dir_path.iterdir() if f.is_file() and f.suffix.lower() in supported_exts
             )
 
         progress(0.2, desc=f"Found {file_count} files. Processing...")
@@ -1035,7 +1115,9 @@ def get_performance_stats() -> tuple[str, str, dict[str, Any]]:
             health.get("status", "unknown"), "⚪"
         )
         left.append(f"### {status_emoji} Health: {health.get('status', 'unknown').upper()}")
-        left.append(f"Score: {health.get('score', 0)}% | Ops: {health.get('total_operations', 0):,} | Errors: {health.get('total_errors', 0)}\n")
+        left.append(
+            f"Score: {health.get('score', 0)}% | Ops: {health.get('total_operations', 0):,} | Errors: {health.get('total_errors', 0)}\n"
+        )
 
         # GPU Metrics
         gpu = summary.get("gpu", {})
@@ -1047,7 +1129,9 @@ def get_performance_stats() -> tuple[str, str, dict[str, Any]]:
 
             mem_pct = gpu.get("memory_percent", 0)
             mem_status = "🟢" if mem_pct < 70 else "🟡" if mem_pct < 85 else "🔴"
-            left.append(f"| Memory | {gpu.get('memory_allocated_gb', 0):.1f}/{gpu.get('memory_total_gb', 0):.1f}GB {mem_status} |")
+            left.append(
+                f"| Memory | {gpu.get('memory_allocated_gb', 0):.1f}/{gpu.get('memory_total_gb', 0):.1f}GB {mem_status} |"
+            )
 
             if "temperature_c" in gpu:
                 temp = gpu["temperature_c"]
@@ -1057,7 +1141,9 @@ def get_performance_stats() -> tuple[str, str, dict[str, Any]]:
             if "power_draw_watts" in gpu:
                 power = gpu["power_draw_watts"]
                 limit = gpu.get("power_limit_watts", 300)
-                power_status = "🟢" if power < limit * 0.7 else "🟡" if power < limit * 0.9 else "🔴"
+                power_status = (
+                    "🟢" if power < limit * 0.7 else "🟡" if power < limit * 0.9 else "🔴"
+                )
                 left.append(f"| Power | {power:.0f}/{limit:.0f}W {power_status} |")
 
             if "utilization_percent" in gpu:
@@ -1236,9 +1322,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                 with gr.Group():
                     with gr.Row():
                         gr.Markdown("### 🎯 Target Collection")
-                        refresh_collections_btn = gr.Button(
-                            "🔄", size="sm", scale=0, min_width=40
-                        )
+                        refresh_collections_btn = gr.Button("🔄", size="sm", scale=0, min_width=40)
                     upload_collection = gr.Dropdown(
                         choices=["documents"],
                         value="documents",
@@ -1276,9 +1360,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                             clear_queue_btn = gr.Button(
                                 "🗑️ Clear", variant="secondary", size="sm", scale=1
                             )
-                            upload_btn = gr.Button(
-                                "📤 Upload & Index", variant="primary", scale=2
-                            )
+                            upload_btn = gr.Button("📤 Upload & Index", variant="primary", scale=2)
 
                     # Right column: Folder indexing
                     with gr.Column(scale=1):
@@ -1310,9 +1392,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                     return format_file_list_html(accumulated_files), None
 
                 # Upload accumulated files to the API
-                def upload_queued_files(
-                    collection: str, api_url: str
-                ) -> tuple[str, str, None]:
+                def upload_queued_files(collection: str, api_url: str) -> tuple[str, str, None]:
                     """Upload queued files to the API."""
                     if not accumulated_files:
                         return (
@@ -1858,16 +1938,17 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
 
             # Tab 5: System Info
             with gr.Tab("ℹ️ System"):
-                gr.Markdown("*Click 'Load System Info' to see current system status*")
-                system_info = gr.JSON(
-                    label="System Information",
-                    value={"status": "Click 'Load System Info' to refresh"},
-                )
-
                 with gr.Row():
-                    load_sys_btn = gr.Button("ℹ️ Load System Info", variant="secondary", size="sm")
-                    refresh_sys_btn = gr.Button("🔄 Refresh", size="sm")
-                sys_status = gr.Textbox(label="Status", interactive=False, lines=2)
+                    gr.Markdown("### ℹ️ System Information")
+                    load_sys_btn = gr.Button("ℹ️ Load", size="sm", scale=0, min_width=60)
+                    refresh_sys_btn = gr.Button("🔄", size="sm", scale=0, min_width=40)
+
+                system_info = gr.JSON(
+                    label="",
+                    value={"status": "Click Load to view system info"},
+                    show_label=False,
+                )
+                sys_status = gr.Textbox(label="Status", interactive=False, lines=1)
 
                 load_sys_btn.click(
                     fn=safe_get_system_info,
@@ -1882,6 +1963,9 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
 
             # Tab 6: Performance / Bottleneck Analysis
             with gr.Tab("📊 Performance"):
+                # Timer for auto-refresh (starts inactive)
+                perf_timer = gr.Timer(value=5.0, active=False)
+
                 # Compact header with controls
                 with gr.Row():
                     with gr.Column(scale=4):
@@ -1891,9 +1975,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                             value=False,
                         )
                     with gr.Column(scale=1, min_width=60):
-                        refresh_perf_btn = gr.Button(
-                            "🔄", size="sm"
-                        )
+                        refresh_perf_btn = gr.Button("🔄", size="sm")
                         perf_status = gr.Markdown(
                             value="",
                         )
@@ -1909,17 +1991,17 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                             value="",
                         )
 
-                # Raw stats with download button
+                # Raw stats accordion with download in header
                 with gr.Accordion("📋 Raw Stats", open=False):
-                    perf_json = gr.JSON(
-                        label="",
-                        value={"status": "Click 🔄 to load"},
-                        show_label=False,
-                    )
                     with gr.Row():
-                        download_stats_btn = gr.DownloadButton(
-                            "⬇️ Download JSON", size="sm", variant="secondary"
+                        perf_json = gr.JSON(
+                            label="",
+                            value={"status": "Click 🔄 to load"},
+                            show_label=False,
                         )
+                    download_stats_btn = gr.DownloadButton(
+                        "⬇️ Download JSON", size="sm", variant="secondary"
+                    )
 
                 def refresh_performance() -> tuple[str, str, dict[str, Any], str]:
                     """Refresh performance stats and return formatted output."""
@@ -1958,21 +2040,18 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                     outputs=[download_stats_btn],
                 )
 
-                # Auto-refresh timer - only refreshes when checkbox is enabled
-                def timed_refresh(
-                    is_enabled: bool,
-                ) -> tuple[Any, Any, Any, Any]:
-                    """Refresh stats only if auto-refresh is enabled."""
-                    if is_enabled:
-                        return refresh_performance()
-                    return gr.update(), gr.update(), gr.update(), gr.update()  # type: ignore[return-value]
-
-                # Timer runs but only updates when checkbox is checked
-                perf_timer = gr.Timer(value=5)
+                # Timer tick triggers refresh (only when timer is active)
                 perf_timer.tick(
-                    fn=timed_refresh,
-                    inputs=[auto_refresh_toggle],
+                    fn=refresh_performance,
+                    inputs=[],
                     outputs=[perf_left, perf_right, perf_json, perf_status],
+                )
+
+                # Toggle checkbox activates/deactivates the timer
+                auto_refresh_toggle.change(
+                    fn=lambda enabled: gr.Timer(active=enabled),
+                    inputs=[auto_refresh_toggle],
+                    outputs=[perf_timer],
                 )
 
         gr.Markdown(

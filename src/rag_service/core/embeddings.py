@@ -512,9 +512,9 @@ class SentenceTransformerEmbedding:
 
             if device == "cuda" and torch.cuda.is_available():
                 info["gpu_name"] = torch.cuda.get_device_name(0)
-                info[
-                    "gpu_memory"
-                ] = f"{torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB"
+                info["gpu_memory"] = (
+                    f"{torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB"
+                )
         except Exception:
             pass
 

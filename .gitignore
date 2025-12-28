@@ -146,6 +146,8 @@ data/chroma/
 *.faiss
 *.pkl
 models/
+test-results/
+.rag_service.pid
 
 # Logs
 logs/

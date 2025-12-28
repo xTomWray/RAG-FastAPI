@@ -1,0 +1,125 @@
+# RAG Documentation Service - Local CI Test Orchestration
+# Mirrors GitHub Actions matrix testing for Linux environments
+#
+# Usage:
+#   docker-compose -f tests/docker/docker-compose.test.yml up --build
+#   docker-compose -f tests/docker/docker-compose.test.yml up --build test-py311
+#
+# Or via Makefile:
+#   make test-linux          # Test with Python 3.11 (default)
+#   make test-linux-all      # Test with all Python versions
+
+services:
+  # ==========================================================================
+  # Python 3.10 Tests (matches CI matrix)
+  # ==========================================================================
+  test-py310:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile.linux-test
+      args:
+        PYTHON_VERSION: "3.10"
+    container_name: rag-test-py310
+    environment:
+      - PYTHONPATH=/app/src
+      - CLICK_DISABLE_COLORS=1
+    volumes:
+      # Mount source for faster iteration (optional - remove for clean CI test)
+      # - ../../src:/app/src:ro
+      # - ../../tests:/app/tests:ro
+      # Output test results
+      - ../../test-results:/app/test-results
+    command: >
+      pytest tests/unit/ -v --tb=short
+      --junitxml=/app/test-results/py310-results.xml
+
+  # ==========================================================================
+  # Python 3.11 Tests (matches CI matrix) - DEFAULT
+  # ==========================================================================
+  test-py311:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile.linux-test
+      args:
+        PYTHON_VERSION: "3.11"
+    container_name: rag-test-py311
+    environment:
+      - PYTHONPATH=/app/src
+      - CLICK_DISABLE_COLORS=1
+    volumes:
+      - ../../test-results:/app/test-results
+    command: >
+      pytest tests/unit/ -v --tb=short
+      --junitxml=/app/test-results/py311-results.xml
+
+  # ==========================================================================
+  # Python 3.12 Tests (matches CI matrix)
+  # ==========================================================================
+  test-py312:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile.linux-test
+      args:
+        PYTHON_VERSION: "3.12"
+    container_name: rag-test-py312
+    environment:
+      - PYTHONPATH=/app/src
+      - CLICK_DISABLE_COLORS=1
+    volumes:
+      - ../../test-results:/app/test-results
+    command: >
+      pytest tests/unit/ -v --tb=short
+      --junitxml=/app/test-results/py312-results.xml
+
+  # ==========================================================================
+  # Lint Check (matches CI lint job)
+  # ==========================================================================
+  lint:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile.linux-test
+      args:
+        PYTHON_VERSION: "3.11"
+    container_name: rag-test-lint
+    command: >
+      sh -c "ruff check src/ tests/ && ruff format --check src/ tests/"
+
+  # ==========================================================================
+  # Type Check (matches CI type-check job)
+  # ==========================================================================
+  typecheck:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile.linux-test
+      args:
+        PYTHON_VERSION: "3.11"
+    container_name: rag-test-typecheck
+    command: >
+      mypy src/ --ignore-missing-imports
+
+  # ==========================================================================
+  # Full CI Pipeline (runs all checks sequentially)
+  # ==========================================================================
+  ci-full:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile.linux-test
+      args:
+        PYTHON_VERSION: "3.11"
+    container_name: rag-test-ci-full
+    environment:
+      - PYTHONPATH=/app/src
+      - CLICK_DISABLE_COLORS=1
+    volumes:
+      - ../../test-results:/app/test-results
+    command: >
+      sh -c "
+        echo '=== Running Lint ===' &&
+        ruff check src/ tests/ &&
+        ruff format --check src/ tests/ &&
+        echo '=== Running Type Check ===' &&
+        mypy src/ --ignore-missing-imports &&
+        echo '=== Running Unit Tests ===' &&
+        pytest tests/unit/ -v --tb=short --junitxml=/app/test-results/linux-results.xml &&
+        echo '=== All Linux CI Checks Passed! ==='
+      "
