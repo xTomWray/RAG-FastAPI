@@ -4,11 +4,23 @@ Uses Typer's CliRunner for testing CLI commands without
 actually starting servers or running subprocesses.
 """
 
+import re
+
 from typer.testing import CliRunner
 
 from rag_service.cli.main import app
 
 runner = CliRunner()
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from text.
+
+    This is needed because Rich/Typer output may contain color codes
+    that interfere with string matching in tests.
+    """
+    ansi_pattern = re.compile(r"\x1b\[[0-9;]*m")
+    return ansi_pattern.sub("", text)
 
 
 class TestCLIHelp:
@@ -28,10 +40,11 @@ class TestCLIHelp:
         """Test start command help."""
         result = runner.invoke(app, ["start", "--help"])
         assert result.exit_code == 0
-        assert "Start the RAG service" in result.stdout
-        assert "--reload" in result.stdout
-        assert "--no-ui" in result.stdout
-        assert "--workers" in result.stdout
+        output = strip_ansi(result.stdout)
+        assert "Start the RAG service" in output
+        assert "--reload" in output
+        assert "--no-ui" in output
+        assert "--workers" in output
 
     def test_stop_help(self) -> None:
         """Test stop command help."""
@@ -49,32 +62,36 @@ class TestCLIHelp:
         """Test install command help."""
         result = runner.invoke(app, ["install", "--help"])
         assert result.exit_code == 0
-        assert "Install project dependencies" in result.stdout
-        assert "--dev" in result.stdout
-        assert "--gpu" in result.stdout
-        assert "--all" in result.stdout
+        output = strip_ansi(result.stdout)
+        assert "Install project dependencies" in output
+        assert "--dev" in output
+        assert "--gpu" in output
+        assert "--all" in output
 
     def test_test_help(self) -> None:
         """Test test command help."""
         result = runner.invoke(app, ["test", "--help"])
         assert result.exit_code == 0
-        assert "Run tests with pytest" in result.stdout
-        assert "--unit" in result.stdout
-        assert "--coverage" in result.stdout
+        output = strip_ansi(result.stdout)
+        assert "Run tests with pytest" in output
+        assert "--unit" in output
+        assert "--coverage" in output
 
     def test_lint_help(self) -> None:
         """Test lint command help."""
         result = runner.invoke(app, ["lint", "--help"])
         assert result.exit_code == 0
-        assert "Run linter" in result.stdout
-        assert "--fix" in result.stdout
+        output = strip_ansi(result.stdout)
+        assert "Run linter" in output
+        assert "--fix" in output
 
     def test_format_help(self) -> None:
         """Test format command help."""
         result = runner.invoke(app, ["format", "--help"])
         assert result.exit_code == 0
-        assert "Format code" in result.stdout
-        assert "--check" in result.stdout
+        output = strip_ansi(result.stdout)
+        assert "Format code" in output
+        assert "--check" in output
 
     def test_check_help(self) -> None:
         """Test check command help."""
@@ -86,15 +103,17 @@ class TestCLIHelp:
         """Test clean command help."""
         result = runner.invoke(app, ["clean", "--help"])
         assert result.exit_code == 0
-        assert "Clean build artifacts" in result.stdout
-        assert "--data" in result.stdout
+        output = strip_ansi(result.stdout)
+        assert "Clean build artifacts" in output
+        assert "--data" in output
 
     def test_docker_build_help(self) -> None:
         """Test docker-build command help."""
         result = runner.invoke(app, ["docker-build", "--help"])
         assert result.exit_code == 0
-        assert "Build Docker image" in result.stdout
-        assert "--gpu" in result.stdout
+        output = strip_ansi(result.stdout)
+        assert "Build Docker image" in output
+        assert "--gpu" in output
 
     def test_docker_run_help(self) -> None:
         """Test docker-run command help."""
