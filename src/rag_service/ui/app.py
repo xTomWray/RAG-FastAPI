@@ -219,6 +219,84 @@ def get_system_info(api_url: str) -> dict[str, Any]:
         return {"error": str(e)}
 
 
+def search_hf_models(
+    query: str,
+    filter_st: bool,
+    api_url: str,
+) -> tuple[Any, str]:
+    """Search HuggingFace Hub for embedding models.
+
+    Args:
+        query: Search query string.
+        filter_st: Whether to filter for sentence-transformers.
+        api_url: Base URL of the RAG API service.
+
+    Returns:
+        Tuple of (dropdown update, info markdown).
+    """
+    if not query or len(query) < 2:
+        return (
+            gr.update(),  # Keep current dropdown
+            "*Enter at least 2 characters to search*",
+        )
+
+    try:
+        response = httpx.get(
+            f"{api_url}/api/v1/models/search",
+            params={
+                "query": query,
+                "limit": 15,
+                "filter_st": filter_st,
+                "sort": "downloads",
+            },
+            timeout=10.0,
+        )
+
+        if response.status_code != 200:
+            return (
+                gr.update(),
+                f"*Search failed: {response.status_code}*",
+            )
+
+        data = response.json()
+        models = data.get("models", [])
+
+        if not models:
+            return (
+                gr.update(),
+                f"*No models found for '{query}'*",
+            )
+
+        # Build choices list with model IDs
+        choices = [m["id"] for m in models]
+
+        # Build info markdown with metadata
+        info_lines = ["**Search Results** (select from dropdown)\n"]
+        for m in models[:5]:  # Show top 5 details
+            downloads = m.get("downloads", 0)
+            likes = m.get("likes", 0)
+            downloads_str = f"{downloads:,}" if downloads else "N/A"
+            info_lines.append(f"• **{m['id']}** — {downloads_str} downloads, {likes} ❤️")
+
+        if len(models) > 5:
+            info_lines.append(f"\n*...and {len(models) - 5} more in dropdown*")
+
+        if data.get("cached"):
+            info_lines.append("\n*(cached result)*")
+
+        return (
+            gr.update(choices=choices, value=choices[0] if choices else None),
+            "\n".join(info_lines),
+        )
+
+    except httpx.TimeoutException:
+        return (gr.update(), "*Search timed out - try again*")
+    except httpx.ConnectError:
+        return (gr.update(), "*Cannot connect to API - is it running?*")
+    except Exception as e:
+        return (gr.update(), f"*Search error: {str(e)}*")
+
+
 def load_current_config() -> dict[str, Any]:
     """Load current configuration from config.yaml and settings."""
     from rag_service.config import get_config_file_path, get_settings
@@ -1608,19 +1686,36 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                 # === EMBEDDING SECTION ===
                 with gr.Accordion("🧠 Embedding Model", open=True):
                     gr.Markdown(
-                        "*Configure the embedding model for semantic search. Larger models = better quality but more VRAM.*",
+                        "*Search HuggingFace Hub for embedding models or select from popular choices.*",
                         elem_classes=["help-text"],
                     )
+                    # Row 1: Search input and controls
+                    with gr.Row():
+                        model_search_input = gr.Textbox(
+                            label="🔍 Search HuggingFace",
+                            placeholder="Type to search (e.g., 'minilm', 'bge', 'e5')...",
+                            scale=3,
+                        )
+                        model_filter_st = gr.Checkbox(
+                            label="Embedding Models Only",
+                            value=True,
+                            scale=1,
+                            info="Filter for feature-extraction models",
+                        )
+                        model_search_btn = gr.Button(
+                            "Search", scale=1, variant="secondary"
+                        )
+                    # Row 2: Model selection and device
                     with gr.Row():
                         cfg_embedding_model = gr.Dropdown(
                             choices=EMBEDDING_MODEL_CHOICES,
                             value=initial_config.get(
                                 "embedding_model", "sentence-transformers/all-MiniLM-L6-v2"
                             ),
-                            label="Model",
+                            label="Selected Model",
                             allow_custom_value=True,
                             scale=3,
-                            info="Select or type any HuggingFace model ID",
+                            info="Select from search results or type any HuggingFace model ID",
                         )
                         cfg_device = gr.Dropdown(
                             choices=["auto", "cpu", "cuda", "mps"],
@@ -1637,6 +1732,10 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                             scale=1,
                             info="Higher = faster but more VRAM",
                         )
+                    # Row 3: Search results info
+                    model_search_info = gr.Markdown(
+                        value="*Search HuggingFace Hub for more embedding models*",
+                    )
 
                 # === DOCUMENT PROCESSING SECTION ===
                 with gr.Accordion("📄 Document Processing", open=True):
@@ -1934,6 +2033,21 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                     fn=apply_restart_and_report,
                     inputs=config_components,
                     outputs=[config_status],
+                )
+
+                # Model search event handlers
+                def do_model_search(query: str, filter_st: bool) -> tuple[Any, str]:
+                    return search_hf_models(query, filter_st, api_url)
+
+                model_search_btn.click(
+                    fn=do_model_search,
+                    inputs=[model_search_input, model_filter_st],
+                    outputs=[cfg_embedding_model, model_search_info],
+                )
+                model_search_input.submit(
+                    fn=do_model_search,
+                    inputs=[model_search_input, model_filter_st],
+                    outputs=[cfg_embedding_model, model_search_info],
                 )
 
             # Tab 5: System Info

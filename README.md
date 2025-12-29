@@ -6,7 +6,7 @@ A cross-platform, open-source RAG (Retrieval-Augmented Generation) API service f
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - pip
 - (Optional) NVIDIA GPU with CUDA 12.1+ for GPU acceleration
 

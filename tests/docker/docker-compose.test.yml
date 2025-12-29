@@ -11,29 +11,6 @@
 
 services:
   # ==========================================================================
-  # Python 3.10 Tests (matches CI matrix)
-  # ==========================================================================
-  test-py310:
-    build:
-      context: ../..
-      dockerfile: tests/docker/Dockerfile.linux-test
-      args:
-        PYTHON_VERSION: "3.10"
-    container_name: rag-test-py310
-    environment:
-      - PYTHONPATH=/app/src
-      - CLICK_DISABLE_COLORS=1
-    volumes:
-      # Mount source for faster iteration (optional - remove for clean CI test)
-      # - ../../src:/app/src:ro
-      # - ../../tests:/app/tests:ro
-      # Output test results
-      - ../../test-results:/app/test-results
-    command: >
-      pytest tests/unit/ -v --tb=short
-      --junitxml=/app/test-results/py310-results.xml
-
-  # ==========================================================================
   # Python 3.11 Tests (matches CI matrix) - DEFAULT
   # ==========================================================================
   test-py311:
@@ -96,6 +73,45 @@ services:
     container_name: rag-test-typecheck
     command: >
       mypy src/ --ignore-missing-imports
+
+  # ==========================================================================
+  # Coverage Report (matches CI coverage job)
+  # ==========================================================================
+  coverage:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile.linux-test
+      args:
+        PYTHON_VERSION: "3.11"
+    container_name: rag-test-coverage
+    environment:
+      - PYTHONPATH=/app/src
+      - CLICK_DISABLE_COLORS=1
+    volumes:
+      - ../../test-results:/app/test-results
+    command: >
+      pytest tests/ --cov=src/rag_service --cov-report=term-missing
+      --cov-report=xml:/app/test-results/coverage.xml
+      -v --tb=short
+
+  # ==========================================================================
+  # Integration Tests (matches CI integration step)
+  # ==========================================================================
+  integration:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile.linux-test
+      args:
+        PYTHON_VERSION: "3.11"
+    container_name: rag-test-integration
+    environment:
+      - PYTHONPATH=/app/src
+      - CLICK_DISABLE_COLORS=1
+    volumes:
+      - ../../test-results:/app/test-results
+    command: >
+      pytest tests/integration/ -v --tb=short
+      --junitxml=/app/test-results/integration-results.xml
 
   # ==========================================================================
   # Full CI Pipeline (runs all checks sequentially)

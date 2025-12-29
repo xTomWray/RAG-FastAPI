@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from rag_service.api.v1.endpoints import health, ingest, query
+from rag_service.api.v1.endpoints import health, ingest, models, query
 
 router = APIRouter()
 
@@ -10,3 +10,4 @@ router = APIRouter()
 router.include_router(health.router)
 router.include_router(query.router)
 router.include_router(ingest.router)
+router.include_router(models.router)

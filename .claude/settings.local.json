@@ -17,7 +17,8 @@
       "Bash(taskkill //F //PID 39704)",
       "Bash(mkdir:*)",
       "Bash(docker:*)",
-      "Bash(docker-compose:*)"
+      "Bash(docker-compose:*)",
+      "Bash(gh run:*)"
     ]
   },
   "outputStyle": "Explanatory"

@@ -132,6 +132,18 @@ class Settings(BaseSettings):
         description="Batch size for embedding generation",
     )
 
+    # HuggingFace Hub Configuration
+    hf_token: str | None = Field(
+        default=None,
+        description="HuggingFace API token for higher rate limits (optional)",
+    )
+    hf_model_cache_ttl: int = Field(
+        default=3600,
+        ge=60,
+        le=86400,
+        description="Cache TTL in seconds for model search results",
+    )
+
     # GPU Safeguard Configuration
     enable_gpu_safeguards: bool = Field(
         default=True,

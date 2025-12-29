@@ -6,6 +6,11 @@ from rag_service.api.v1.schemas.ingest import (
     IngestResponse,
     IngestStatus,
 )
+from rag_service.api.v1.schemas.models import (
+    ModelInfo,
+    ModelSearchRequest,
+    ModelSearchResponse,
+)
 from rag_service.api.v1.schemas.query import QueryRequest, QueryResponse, SearchResultSchema
 
 __all__ = [
@@ -13,6 +18,9 @@ __all__ = [
     "FileIngestRequest",
     "IngestResponse",
     "IngestStatus",
+    "ModelInfo",
+    "ModelSearchRequest",
+    "ModelSearchResponse",
     "QueryRequest",
     "QueryResponse",
     "SearchResultSchema",

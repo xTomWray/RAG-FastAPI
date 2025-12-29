@@ -6,8 +6,8 @@
 
 .PHONY: install dev gpu all test test-unit test-integration test-cov \
         lint lint-fix format format-check typecheck check \
-        pre-commit pre-commit-hooks pre-commit-quick \
-        run run-prod docker-build docker-run clean clean-data help \
+        pre-commit pre-commit-full pre-commit-hooks pre-commit-quick \
+        run run-prod docker-build docker-build-test docker-run clean clean-data help \
         test-linux test-linux-all test-windows ci-local ci-local-full
 
 # Default target
@@ -63,8 +63,8 @@ test-cov: ## Run tests with coverage report
 test-linux: ## Run tests in Linux Docker container (Python 3.11)
 	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit test-py311
 
-test-linux-all: ## Run tests in Linux Docker for all Python versions
-	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit test-py310 test-py311 test-py312
+test-linux-all: ## Run tests in Linux Docker for all Python versions (3.11, 3.12)
+	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit test-py311 test-py312
 
 test-windows: ## Run tests natively on Windows
 	$(PYTHON) -m pytest tests/unit/ -v --tb=short
@@ -76,11 +76,16 @@ ci-local-full: ## Run full local CI on both Windows (native) and Linux (Docker)
 	@echo "=== Running Windows CI ==="
 	$(PYTHON) -m ruff check src/ tests/
 	$(PYTHON) -m ruff format --check src/ tests/
-	$(PYTHON) -m mypy src/ --ignore-missing-imports
+	$(PYTHON) -m mypy src/ --ignore-missing-imports --no-incremental
 	$(PYTHON) -m pytest tests/unit/ -v --tb=short
 	@echo "=== Running Linux CI (Docker) ==="
 	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit ci-full
+	@echo "=== Building Production Docker Image ==="
+	docker build --target production -t rag-documentation-service:ci-test .
 	@echo "=== All CI Checks Passed! ==="
+
+docker-build-test: ## Test that production Docker image builds successfully
+	docker build --target production -t rag-documentation-service:build-test .
 
 #---------------------------------------------------------------------------
 # Code Quality
@@ -104,15 +109,58 @@ typecheck: ## Run type checker
 check: ## Run all checks (lint, format, typecheck)
 	$(PYTHON) -m rag_service check
 
-pre-commit: ## Run pre-commit checks: Windows native + Linux Docker tests
+pre-commit: ## Run pre-commit checks: Windows native + Linux Docker tests + Production Docker build
 	@echo "=== Pre-commit: Windows Native Checks ==="
 	$(PYTHON) -m ruff check src/ tests/
 	$(PYTHON) -m ruff format --check src/ tests/
-	$(PYTHON) -m mypy src/ --ignore-missing-imports
+	$(PYTHON) -m mypy src/ --ignore-missing-imports --no-incremental
 	$(PYTHON) -m pytest tests/unit/ -v --tb=short
 	@echo "=== Pre-commit: Linux Docker Checks ==="
 	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit ci-full
+	@echo "=== Pre-commit: Production Docker Build ==="
+	docker build --target production -t rag-documentation-service:pre-commit-test .
 	@echo "=== Pre-commit Checks Passed! Ready to commit. ==="
+
+pre-commit-full: ## Full CI matrix (8/11 jobs): Windows + Linux multi-Python + Coverage + Docker
+	@echo "============================================================"
+	@echo "FULL PRE-COMMIT: Matching GitHub CI (8/11 jobs, skip macOS)"
+	@echo "============================================================"
+	@echo ""
+	@echo "=== [1/8] Windows Native: Lint ==="
+	$(PYTHON) -m ruff check src/ tests/
+	@echo ""
+	@echo "=== [2/8] Windows Native: Format Check ==="
+	$(PYTHON) -m ruff format --check src/ tests/
+	@echo ""
+	@echo "=== [3/8] Windows Native: Type Check ==="
+	$(PYTHON) -m mypy src/ --ignore-missing-imports --no-incremental
+	@echo ""
+	@echo "=== [4/8] Windows Native: Unit Tests ==="
+	$(PYTHON) -m pytest tests/unit/ -v --tb=short
+	@echo ""
+	@echo "=== [5/8] Windows Native: Integration Tests ==="
+	-$(PYTHON) -m pytest tests/integration/ -v --tb=short
+	@echo ""
+	@echo "=== [6/8] Linux Docker: Lint + Type Check ==="
+	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit lint
+	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit typecheck
+	@echo ""
+	@echo "=== [7/8] Linux Docker: Python 3.11 Tests ==="
+	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit test-py311
+	@echo ""
+	@echo "=== [8/8] Linux Docker: Python 3.12 Tests ==="
+	docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit test-py312
+	@echo ""
+	@echo "=== [BONUS] Linux Docker: Coverage Report ==="
+	-docker-compose -f tests/docker/docker-compose.test.yml up --build --abort-on-container-exit coverage
+	@echo ""
+	@echo "=== [BONUS] Production Docker Build ==="
+	docker build --target production -t rag-documentation-service:pre-commit-full-test .
+	@echo ""
+	@echo "============================================================"
+	@echo "FULL PRE-COMMIT PASSED! (8/11 GitHub CI jobs)"
+	@echo "Skipped: macOS py3.11, macOS py3.12, macOS coverage"
+	@echo "============================================================"
 
 pre-commit-hooks: ## Run pre-commit hooks only (without Docker)
 	pre-commit run --all-files

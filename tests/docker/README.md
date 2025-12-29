@@ -5,8 +5,11 @@ This directory contains Docker configurations for running CI tests locally befor
 ## Quick Start
 
 ```bash
-# Run pre-commit checks (Windows native + Linux Docker)
+# Run pre-commit checks (Windows native + Linux Docker + Production Docker build)
 make pre-commit
+
+# Full CI matrix (8/11 jobs - matches GitHub CI, skips macOS)
+make pre-commit-full
 
 # Quick pre-commit (Windows only, faster)
 make pre-commit-quick
@@ -16,14 +19,30 @@ make pre-commit-quick
 
 | Target | Description |
 |--------|-------------|
-| `make pre-commit` | **Full pre-commit**: Windows native + Linux Docker tests |
+| `make pre-commit` | **Standard**: Windows + Linux (single Python) + Docker build |
+| `make pre-commit-full` | **Full CI matrix**: 8/11 GitHub jobs (Python 3.11, 3.12, coverage) |
 | `make pre-commit-quick` | **Quick**: Windows only (no Docker) |
 | `make pre-commit-hooks` | Run pre-commit hooks only |
 | `make test-linux` | Linux tests in Docker (Python 3.11) |
-| `make test-linux-all` | Linux tests for Python 3.10, 3.11, 3.12 |
+| `make test-linux-all` | Linux tests for Python 3.11, 3.12 |
 | `make test-windows` | Native Windows tests |
 | `make ci-local` | Full Linux CI pipeline in Docker |
-| `make ci-local-full` | Full CI on both Windows and Linux |
+| `make ci-local-full` | Full CI on both Windows and Linux + Production build |
+| `make docker-build-test` | Test production Docker image builds |
+
+## GitHub CI Job Coverage
+
+| GitHub CI Job | `pre-commit` | `pre-commit-full` |
+|---------------|:------------:|:-----------------:|
+| lint | ✅ | ✅ |
+| type-check | ✅ | ✅ |
+| test (ubuntu, py3.11) | ✅ | ✅ |
+| test (ubuntu, py3.12) | ❌ | ✅ |
+| test (windows, py3.11-3.12) | ✅ (local Python) | ✅ (local Python) |
+| test (macos, py3.11-3.12) | ❌ | ❌ (skipped) |
+| coverage | ❌ | ✅ |
+| docker build | ✅ | ✅ |
+| **Total** | **~5/11** | **8/11** |
 
 ## Files
 
@@ -42,11 +61,12 @@ The `docker-compose.test.yml` provides these services:
 
 | Service | Description |
 |---------|-------------|
-| `test-py310` | Python 3.10 unit tests |
 | `test-py311` | Python 3.11 unit tests (default) |
 | `test-py312` | Python 3.12 unit tests |
 | `lint` | Ruff linter + formatter check |
 | `typecheck` | mypy type checking |
+| `coverage` | Run tests with coverage report |
+| `integration` | Integration tests only |
 | `ci-full` | Full CI pipeline (lint → typecheck → tests) |
 
 ## Usage Examples
@@ -61,8 +81,8 @@ make pre-commit
 ### Test Specific Python Version
 
 ```bash
-# Test with Python 3.10 only
-docker-compose -f tests/docker/docker-compose.test.yml up --build test-py310
+# Test with Python 3.12 only
+docker-compose -f tests/docker/docker-compose.test.yml up --build test-py312
 ```
 
 ### Run Full CI Pipeline
@@ -105,10 +125,10 @@ make ci-local
 
 Test results are saved to `test-results/` directory (git-ignored):
 
-- `py310-results.xml` - Python 3.10 JUnit XML
 - `py311-results.xml` - Python 3.11 JUnit XML
 - `py312-results.xml` - Python 3.12 JUnit XML
 - `linux-results.xml` - Full CI run results
+- `coverage.xml` - Coverage report
 
 ## Requirements
 
@@ -117,13 +137,20 @@ Test results are saved to `test-results/` directory (git-ignored):
 
 ## Comparison with GitHub Actions
 
-| GitHub CI Job | Local Equivalent |
-|---------------|------------------|
-| `lint` | `make lint` or Docker `lint` service |
-| `type-check` | `make typecheck` or Docker `typecheck` service |
-| `test` (matrix) | `make test-linux-all` |
-| `coverage` | `make test-cov` |
-| `docker` | `make docker-build` |
+| GitHub CI Job | Local Equivalent | Included in |
+|---------------|------------------|-------------|
+| `lint` | `make lint` or Docker `lint` service | `pre-commit`, `pre-commit-full` |
+| `type-check` | `make typecheck` or Docker `typecheck` service | `pre-commit`, `pre-commit-full` |
+| `test` (ubuntu matrix) | `make test-linux-all` | `pre-commit-full` |
+| `test` (windows matrix) | `make test-windows` | `pre-commit`, `pre-commit-full` |
+| `test` (macos matrix) | N/A (requires macOS hardware) | ❌ |
+| `coverage` | Docker `coverage` service | `pre-commit-full` |
+| `docker` (build) | `make docker-build-test` | `pre-commit`, `pre-commit-full` |
+
+**Recommendations:**
+- Use `make pre-commit` for quick validation before commits (~3-5 min)
+- Use `make pre-commit-full` before pushing to catch multi-Python issues (~10-15 min)
+- macOS-specific issues are rare if Windows + Linux pass
 
 ## Troubleshooting
 
