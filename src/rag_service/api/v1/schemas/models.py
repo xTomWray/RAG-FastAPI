@@ -48,7 +48,9 @@ class ModelInfo(BaseModel):
     downloads: int = Field(default=0, description="Total download count")
     likes: int = Field(default=0, description="Number of likes")
     tags: list[str] = Field(default_factory=list, description="Model tags")
-    pipeline_tag: str | None = Field(default=None, description="Pipeline type (e.g., sentence-similarity)")
+    pipeline_tag: str | None = Field(
+        default=None, description="Pipeline type (e.g., sentence-similarity)"
+    )
 
 
 class ModelSearchResponse(BaseModel):

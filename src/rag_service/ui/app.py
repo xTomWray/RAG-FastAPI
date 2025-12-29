@@ -297,6 +297,84 @@ def search_hf_models(
         return (gr.update(), f"*Search error: {str(e)}*")
 
 
+def search_hf_rerankers(
+    query: str,
+    filter_rerankers: bool,
+    api_url: str,
+) -> tuple[Any, str]:
+    """Search HuggingFace Hub for reranker/cross-encoder models.
+
+    Args:
+        query: Search query string.
+        filter_rerankers: Whether to filter for cross-encoder models.
+        api_url: Base URL of the RAG API service.
+
+    Returns:
+        Tuple of (dropdown update, info markdown).
+    """
+    if not query or len(query) < 2:
+        return (
+            gr.update(),  # Keep current dropdown
+            "*Enter at least 2 characters to search*",
+        )
+
+    try:
+        response = httpx.get(
+            f"{api_url}/api/v1/models/rerankers/search",
+            params={
+                "query": query,
+                "limit": 15,
+                "filter_rerankers": filter_rerankers,
+                "sort": "downloads",
+            },
+            timeout=10.0,
+        )
+
+        if response.status_code != 200:
+            return (
+                gr.update(),
+                f"*Search failed: {response.status_code}*",
+            )
+
+        data = response.json()
+        models = data.get("models", [])
+
+        if not models:
+            return (
+                gr.update(),
+                f"*No reranker models found for '{query}'*",
+            )
+
+        # Build choices list with model IDs
+        choices = [m["id"] for m in models]
+
+        # Build info markdown with metadata
+        info_lines = ["**Reranker Search Results** (select from dropdown)\n"]
+        for m in models[:5]:  # Show top 5 details
+            downloads = m.get("downloads", 0)
+            likes = m.get("likes", 0)
+            downloads_str = f"{downloads:,}" if downloads else "N/A"
+            info_lines.append(f"• **{m['id']}** — {downloads_str} downloads, {likes} ❤️")
+
+        if len(models) > 5:
+            info_lines.append(f"\n*...and {len(models) - 5} more in dropdown*")
+
+        if data.get("cached"):
+            info_lines.append("\n*(cached result)*")
+
+        return (
+            gr.update(choices=choices, value=choices[0] if choices else None),
+            "\n".join(info_lines),
+        )
+
+    except httpx.TimeoutException:
+        return (gr.update(), "*Search timed out - try again*")
+    except httpx.ConnectError:
+        return (gr.update(), "*Cannot connect to API - is it running?*")
+    except Exception as e:
+        return (gr.update(), f"*Search error: {str(e)}*")
+
+
 def load_current_config() -> dict[str, Any]:
     """Load current configuration from config.yaml and settings."""
     from rag_service.config import get_config_file_path, get_settings
@@ -366,6 +444,9 @@ def save_config_to_yaml(config: dict[str, Any]) -> str:
             "embedding_model",
             "device",
             "embedding_batch_size",
+            "enable_reranking",
+            "reranker_model",
+            "reranker_top_k",
             "chunk_size",
             "chunk_overlap",
             "pdf_strategy",
@@ -389,6 +470,10 @@ def save_config_to_yaml(config: dict[str, Any]) -> str:
             "entity_extraction_domain",
             "ollama_model",
         ]
+
+        # Transform chunker_type to enable_3gpp_chunking
+        if "chunker_type" in config:
+            full_config["enable_3gpp_chunking"] = config["chunker_type"] == "3gpp"
 
         for field in ui_fields:
             if field in config:
@@ -484,28 +569,33 @@ def get_config_display() -> tuple[Any, ...]:
         config.get("embedding_model", "sentence-transformers/all-MiniLM-L6-v2"),
         config.get("device", "auto"),
         config.get("embedding_batch_size", 32),
-        # Row 2: Document Processing
+        # Row 2: Reranker
+        config.get("enable_reranking", False),
+        config.get("reranker_model", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
+        config.get("reranker_top_k", 50),
+        # Row 3: Document Processing
+        "3gpp" if config.get("enable_3gpp_chunking", False) else "standard",
         config.get("chunk_size", 512),
         config.get("chunk_overlap", 50),
         config.get("pdf_strategy", "fast"),
-        # Row 3: Vector Store
+        # Row 4: Vector Store
         config.get("vector_store_backend", "faiss"),
         config.get("faiss_index_dir", "./data/index"),
         config.get("chroma_persist_dir", "./data/chroma"),
         config.get("default_collection", "documents"),
-        # Row 4: API
+        # Row 5: API
         config.get("host", "0.0.0.0"),
         config.get("port", 8080),
         config.get("api_prefix", "/api/v1"),
         config.get("cors_origins", "http://localhost:3000,http://localhost:8080"),
         config.get("log_level", "INFO"),
-        # Row 5: GraphRAG
+        # Row 6: GraphRAG
         config.get("enable_graph_rag", True),
         config.get("graph_store_backend", "memory"),
         config.get("neo4j_uri", "bolt://localhost:7687"),
         config.get("neo4j_user", "neo4j"),
         config.get("neo4j_database", "neo4j"),
-        # Row 6: Query & Extraction
+        # Row 7: Query & Extraction
         config.get("router_mode", "pattern"),
         config.get("default_query_strategy", "vector"),
         config.get("default_top_k", 5),
@@ -1702,9 +1792,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                             scale=1,
                             info="Filter for feature-extraction models",
                         )
-                        model_search_btn = gr.Button(
-                            "Search", scale=1, variant="secondary"
-                        )
+                        model_search_btn = gr.Button("Search", scale=1, variant="secondary")
                     # Row 2: Model selection and device
                     with gr.Row():
                         cfg_embedding_model = gr.Dropdown(
@@ -1737,6 +1825,69 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                         value="*Search HuggingFace Hub for more embedding models*",
                     )
 
+                # === RERANKER SECTION ===
+                # Common reranker model choices
+                RERANKER_MODEL_CHOICES = [
+                    "cross-encoder/ms-marco-MiniLM-L-6-v2",
+                    "cross-encoder/ms-marco-MiniLM-L-12-v2",
+                    "BAAI/bge-reranker-base",
+                    "BAAI/bge-reranker-large",
+                    "BAAI/bge-reranker-v2-m3",
+                    "jinaai/jina-reranker-v1-base-en",
+                ]
+
+                with gr.Accordion("🔄 Reranker (Cross-Encoder)", open=False):
+                    gr.Markdown(
+                        "*Optional: Use a cross-encoder to rerank search results for better accuracy.*",
+                        elem_classes=["help-text"],
+                    )
+                    # Row 1: Enable toggle and top_k
+                    with gr.Row():
+                        cfg_enable_reranking = gr.Checkbox(
+                            label="Enable Reranking",
+                            value=initial_config.get("enable_reranking", False),
+                            scale=1,
+                            info="Rerank initial results for better relevance",
+                        )
+                        cfg_reranker_top_k = gr.Number(
+                            value=initial_config.get("reranker_top_k", 50),
+                            label="Initial Results to Rerank",
+                            minimum=10,
+                            maximum=200,
+                            scale=1,
+                            info="Fetch this many, then rerank to top_k",
+                        )
+                    # Row 2: Search input and controls
+                    with gr.Row():
+                        reranker_search_input = gr.Textbox(
+                            label="🔍 Search HuggingFace",
+                            placeholder="Type to search (e.g., 'ms-marco', 'bge-reranker')...",
+                            scale=3,
+                        )
+                        reranker_filter = gr.Checkbox(
+                            label="Cross-Encoder Models Only",
+                            value=True,
+                            scale=1,
+                            info="Filter for reranker/cross-encoder models",
+                        )
+                        reranker_search_btn = gr.Button("Search", scale=1, variant="secondary")
+                    # Row 3: Model selection
+                    with gr.Row():
+                        cfg_reranker_model = gr.Dropdown(
+                            choices=RERANKER_MODEL_CHOICES,
+                            value=initial_config.get(
+                                "reranker_model", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+                            ),
+                            label="Selected Reranker Model",
+                            allow_custom_value=True,
+                            scale=4,
+                            info="Select from search results or type any HuggingFace model ID",
+                        )
+                    # Row 4: Search results info
+                    reranker_search_info = gr.Markdown(
+                        value="*Search HuggingFace Hub for cross-encoder models*",
+                    )
+
                 # === DOCUMENT PROCESSING SECTION ===
                 with gr.Accordion("📄 Document Processing", open=True):
                     gr.Markdown(
@@ -1744,25 +1895,37 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                         elem_classes=["help-text"],
                     )
                     with gr.Row():
+                        cfg_chunker_type = gr.Dropdown(
+                            choices=["standard", "3gpp"],
+                            value="3gpp"
+                            if initial_config.get("enable_3gpp_chunking", False)
+                            else "standard",
+                            label="Chunker",
+                            scale=1,
+                            info="standard=general, 3gpp=clause-aware for specs",
+                        )
                         cfg_chunk_size = gr.Number(
                             value=initial_config.get("chunk_size", 512),
                             label="Chunk Size",
                             minimum=100,
                             maximum=4096,
-                            info="Characters per chunk (smaller=precise, larger=more context)",
+                            scale=1,
+                            info="Characters per chunk",
                         )
                         cfg_chunk_overlap = gr.Number(
                             value=initial_config.get("chunk_overlap", 50),
                             label="Overlap",
                             minimum=0,
                             maximum=500,
-                            info="Characters overlap between chunks",
+                            scale=1,
+                            info="Overlap between chunks",
                         )
                         cfg_pdf_strategy = gr.Dropdown(
                             choices=["fast", "hi_res", "ocr_only"],
                             value=initial_config.get("pdf_strategy", "fast"),
                             label="PDF Strategy",
-                            info="fast=quick, hi_res=complex layouts, ocr_only=scanned docs",
+                            scale=1,
+                            info="fast/hi_res/ocr_only",
                         )
 
                 # === VECTOR STORE SECTION ===
@@ -1943,28 +2106,33 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                     cfg_embedding_model,
                     cfg_device,
                     cfg_embedding_batch_size,
-                    # Row 2: Document Processing
+                    # Row 2: Reranker
+                    cfg_enable_reranking,
+                    cfg_reranker_model,
+                    cfg_reranker_top_k,
+                    # Row 3: Document Processing
+                    cfg_chunker_type,
                     cfg_chunk_size,
                     cfg_chunk_overlap,
                     cfg_pdf_strategy,
-                    # Row 3: Vector Store
+                    # Row 4: Vector Store
                     cfg_vector_store,
                     cfg_faiss_index_dir,
                     cfg_chroma_persist_dir,
                     cfg_default_collection,
-                    # Row 4: API
+                    # Row 5: API
                     cfg_host,
                     cfg_port,
                     cfg_api_prefix,
                     cfg_cors_origins,
                     cfg_log_level,
-                    # Row 5: GraphRAG
+                    # Row 6: GraphRAG
                     cfg_enable_graph,
                     cfg_graph_store,
                     cfg_neo4j_uri,
                     cfg_neo4j_user,
                     cfg_neo4j_database,
-                    # Row 6: Query & Extraction
+                    # Row 7: Query & Extraction
                     cfg_router_mode,
                     cfg_default_query_strategy,
                     cfg_default_top_k,
@@ -1980,7 +2148,12 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                         "embedding_model",
                         "device",
                         "embedding_batch_size",
+                        # Reranker
+                        "enable_reranking",
+                        "reranker_model",
+                        "reranker_top_k",
                         # Document Processing
+                        "chunker_type",
                         "chunk_size",
                         "chunk_overlap",
                         "pdf_strategy",
@@ -2048,6 +2221,21 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                     fn=do_model_search,
                     inputs=[model_search_input, model_filter_st],
                     outputs=[cfg_embedding_model, model_search_info],
+                )
+
+                # Reranker search event handlers
+                def do_reranker_search(query: str, filter_rerankers: bool) -> tuple[Any, str]:
+                    return search_hf_rerankers(query, filter_rerankers, api_url)
+
+                reranker_search_btn.click(
+                    fn=do_reranker_search,
+                    inputs=[reranker_search_input, reranker_filter],
+                    outputs=[cfg_reranker_model, reranker_search_info],
+                )
+                reranker_search_input.submit(
+                    fn=do_reranker_search,
+                    inputs=[reranker_search_input, reranker_filter],
+                    outputs=[cfg_reranker_model, reranker_search_info],
                 )
 
             # Tab 5: System Info

@@ -136,6 +136,11 @@ cython_debug/
 *.swo
 *~
 
+# IDE crash/recovery artifacts (malformed paths as filenames)
+# These occur when VS Code or extensions parse error locations like file:line:col
+srcrag_service*
+*.py:*
+
 # OS
 .DS_Store
 Thumbs.db

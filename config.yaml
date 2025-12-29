@@ -14,9 +14,11 @@
 #   chunk_size -> CHUNK_SIZE
 #
 
-embedding_model: BAAI/bge-large-en-v1.5
+embedding_model: BAAI/bge-base-en-v1.5
 device: cuda
-embedding_batch_size: 1024
+embedding_batch_size: 128
+hf_token: null
+hf_model_cache_ttl: 3600
 enable_gpu_safeguards: true
 gpu_max_memory_percent: 90.0
 gpu_max_temperature_c: 80.0
@@ -32,8 +34,8 @@ vector_store_backend: chroma
 faiss_index_dir: data\index
 chroma_persist_dir: data\chroma
 default_collection: test1
-chunk_size: 1024
-chunk_overlap: 55
+chunk_size: 1800
+chunk_overlap: 250
 pdf_strategy: fast
 host: 0.0.0.0
 port: 8080
@@ -48,7 +50,7 @@ neo4j_user: neo4j
 neo4j_database: neo4j
 router_mode: pattern
 default_query_strategy: vector
-default_top_k: 5
+default_top_k: 100
 entity_extraction_mode: rule_based
 entity_extraction_domain: general
 ollama_model: llama3.2

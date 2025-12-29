@@ -7,8 +7,10 @@ from fastapi import Depends
 
 from rag_service.config import Settings, get_settings
 from rag_service.core.chunker import DocumentChunker, create_chunker
+from rag_service.core.chunker_3gpp import ThreeGPPChunker, create_3gpp_chunker
 from rag_service.core.embeddings import SentenceTransformerEmbedding, create_embedding_service
 from rag_service.core.graph_extractor import EntityExtractor, create_extractor
+from rag_service.core.reranker import CrossEncoderReranker, create_reranker
 from rag_service.core.retriever import VectorStore
 from rag_service.core.router import QueryRouter, create_router
 from rag_service.infrastructure.chroma_store import ChromaVectorStore
@@ -75,6 +77,17 @@ def get_chunker() -> DocumentChunker:
 
 
 @lru_cache
+def get_3gpp_chunker() -> ThreeGPPChunker:
+    """Get the 3GPP-specialized document chunker singleton."""
+    settings = get_settings()
+    return create_3gpp_chunker(
+        max_chunk_size=settings.threegpp_max_chunk_size,
+        preserve_constructs=settings.threegpp_preserve_constructs,
+        table_row_group_size=settings.threegpp_table_row_group_size,
+    )
+
+
+@lru_cache
 def get_graph_store() -> Neo4jGraphStore | InMemoryGraphStore:
     """Get the graph store singleton."""
     settings = get_settings()
@@ -111,6 +124,27 @@ def get_entity_extractor() -> EntityExtractor:
     )
 
 
+@lru_cache
+def get_reranker() -> CrossEncoderReranker | None:
+    """Get the reranker singleton if enabled.
+
+    Returns None if reranking is disabled to avoid loading the model unnecessarily.
+    """
+    settings = get_settings()
+    if not settings.enable_reranking:
+        return None
+
+    return create_reranker(
+        model_name=settings.reranker_model,
+        device=settings.get_resolved_device(),
+        batch_size=settings.embedding_batch_size,
+        enable_gpu_safeguards=settings.enable_gpu_safeguards,
+        max_memory_percent=settings.gpu_max_memory_percent,
+        max_temperature_c=settings.gpu_max_temperature_c,
+        precision=settings.precision,
+    )
+
+
 # Type aliases for cleaner endpoint signatures
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 EmbeddingServiceDep = Annotated[SentenceTransformerEmbedding, Depends(get_embedding_service)]
@@ -119,6 +153,8 @@ ChunkerDep = Annotated[DocumentChunker, Depends(get_chunker)]
 GraphStoreDep = Annotated[Neo4jGraphStore | InMemoryGraphStore, Depends(get_graph_store)]
 QueryRouterDep = Annotated[QueryRouter, Depends(get_query_router)]
 EntityExtractorDep = Annotated[EntityExtractor, Depends(get_entity_extractor)]
+RerankerDep = Annotated[CrossEncoderReranker | None, Depends(get_reranker)]
+ThreeGPPChunkerDep = Annotated[ThreeGPPChunker, Depends(get_3gpp_chunker)]
 
 
 # Direct accessor functions for non-FastAPI contexts (e.g., startup, info endpoint)

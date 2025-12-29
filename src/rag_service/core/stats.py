@@ -216,6 +216,50 @@ class SearchStats:
 
 
 @dataclass
+class RerankStats:
+    """Extended statistics for reranking operations."""
+
+    ops: OperationStats = field(default_factory=OperationStats)
+    total_documents_reranked: int = 0
+    total_rerank_calls: int = 0
+
+    def record(
+        self,
+        duration_ms: float,
+        num_documents: int,
+        success: bool = True,
+    ) -> None:
+        """Record a rerank operation."""
+        self.ops.record(duration_ms, success)
+        self.total_documents_reranked += num_documents
+        self.total_rerank_calls += 1
+
+    @property
+    def avg_docs_per_rerank(self) -> float:
+        """Average documents per rerank call."""
+        if self.total_rerank_calls == 0:
+            return 0.0
+        return self.total_documents_reranked / self.total_rerank_calls
+
+    @property
+    def docs_per_second(self) -> float:
+        """Average documents reranked per second."""
+        if self.ops.total_duration_ms == 0:
+            return 0.0
+        return self.total_documents_reranked / (self.ops.total_duration_ms / 1000)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            **self.ops.to_dict(),
+            "total_documents_reranked": self.total_documents_reranked,
+            "total_rerank_calls": self.total_rerank_calls,
+            "avg_docs_per_rerank": round(self.avg_docs_per_rerank, 1),
+            "docs_per_second": round(self.docs_per_second, 1),
+        }
+
+
+@dataclass
 class IngestStats:
     """Extended statistics for document ingestion."""
 
@@ -294,6 +338,7 @@ class StatsCollector:
         # Core operation stats
         self.embeddings = EmbeddingStats()
         self.searches = SearchStats()
+        self.reranks = RerankStats()
         self.ingestions = IngestStats()
 
         # General operation counters
@@ -318,6 +363,7 @@ class StatsCollector:
             self._start_time = time.time()
             self.embeddings = EmbeddingStats()
             self.searches = SearchStats()
+            self.reranks = RerankStats()
             self.ingestions = IngestStats()
             self.api_requests = OperationStats()
             self.chunking = OperationStats()
@@ -360,6 +406,20 @@ class StatsCollector:
                 duration_ms=duration_ms,
                 results_count=results_count,
                 strategy=strategy,
+                success=success,
+            )
+
+    def record_rerank(
+        self,
+        duration_ms: float,
+        num_documents: int,
+        success: bool = True,
+    ) -> None:
+        """Record a reranking operation."""
+        with self._lock:
+            self.reranks.record(
+                duration_ms=duration_ms,
+                num_documents=num_documents,
                 success=success,
             )
 
@@ -573,6 +633,7 @@ class StatsCollector:
                 "operations": {
                     "embeddings": self.embeddings.to_dict(),
                     "searches": self.searches.to_dict(),
+                    "reranks": self.reranks.to_dict(),
                     "ingestions": self.ingestions.to_dict(),
                     "api_requests": self.api_requests.to_dict(),
                     "chunking": self.chunking.to_dict(),

@@ -16,6 +16,7 @@ from rag_service.dependencies import (
     get_embedding_service,
     get_graph_store,
     get_query_router,
+    get_reranker,
     get_vector_store,
 )
 
@@ -51,6 +52,10 @@ class HybridQueryRequest(BaseModel):
         ge=1,
         le=5,
         description="Number of hops for graph traversal",
+    )
+    rerank: bool | None = Field(
+        default=None,
+        description="Enable cross-encoder reranking (None uses config default)",
     )
 
 
@@ -130,13 +135,15 @@ def _perform_vector_search(
     question: str,
     top_k: int,
     collection: str,
+    enable_reranking: bool | None = None,
 ) -> list[SearchResultSchema]:
-    """Perform vector similarity search.
+    """Perform vector similarity search with optional reranking.
 
     Args:
         question: Query text.
         top_k: Number of results.
         collection: Collection to search.
+        enable_reranking: Override reranking setting (None uses config default).
 
     Returns:
         List of search results.
@@ -144,6 +151,7 @@ def _perform_vector_search(
     Raises:
         CollectionNotFoundError: If collection doesn't exist.
     """
+    settings = get_settings()
     embedding_service = get_embedding_service()
     vector_store = get_vector_store()
 
@@ -152,12 +160,39 @@ def _perform_vector_search(
     if collection not in collections:
         raise CollectionNotFoundError(f"Collection '{collection}' not found")
 
+    # Determine if we should rerank
+    should_rerank = enable_reranking if enable_reranking is not None else settings.enable_reranking
+    reranker = get_reranker() if should_rerank else None
+
+    # If reranking, fetch more initial results then narrow down
+    initial_top_k = settings.reranker_top_k if reranker else top_k
+
     query_embedding = embedding_service.embed_query(question)
     results = vector_store.search(
         query_embedding=query_embedding,
-        top_k=top_k,
+        top_k=initial_top_k,
         collection=collection,
     )
+
+    # Apply reranking if enabled
+    if reranker and results:
+        logger.debug(f"Reranking {len(results)} results with cross-encoder")
+        documents = [r.text for r in results]
+        reranked = reranker.rerank(question, documents, top_k=top_k)
+
+        # Rebuild results in reranked order with new scores
+        reranked_results = []
+        for orig_idx, score in reranked:
+            r = results[orig_idx]
+            reranked_results.append(
+                SearchResultSchema(
+                    text=r.text,
+                    metadata=r.metadata,
+                    score=score,  # Use cross-encoder score
+                    document_id=r.document_id,
+                )
+            )
+        return reranked_results
 
     return [
         SearchResultSchema(
@@ -286,6 +321,7 @@ async def query_documents(request: QueryRequest) -> QueryResponse:
             question=request.question,
             top_k=request.top_k,
             collection=request.collection,
+            enable_reranking=request.rerank,
         )
 
         # Get unique sources
@@ -354,6 +390,7 @@ async def hybrid_query(request: HybridQueryRequest) -> HybridQueryResponse:
                 question=request.question,
                 top_k=request.top_k,
                 collection=request.collection,
+                enable_reranking=request.rerank,
             )
 
         if strategy in ("graph", "hybrid") and settings.enable_graph_rag:

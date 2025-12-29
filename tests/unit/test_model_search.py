@@ -65,9 +65,7 @@ class TestModelSearchEndpoint:
 
             mock_client_instance = AsyncMock()
             mock_client_instance.get = AsyncMock(return_value=mock_response)
-            mock_client.return_value.__aenter__ = AsyncMock(
-                return_value=mock_client_instance
-            )
+            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)
             mock_client.return_value.__aexit__ = AsyncMock(return_value=None)
 
             result = await models.search_models(request)
@@ -118,9 +116,7 @@ class TestModelSearchEndpoint:
             mock_client_instance.get = AsyncMock(
                 side_effect=httpx.TimeoutException("Connection timeout")
             )
-            mock_client.return_value.__aenter__ = AsyncMock(
-                return_value=mock_client_instance
-            )
+            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)
             mock_client.return_value.__aexit__ = AsyncMock(return_value=None)
 
             with pytest.raises(HTTPException) as exc_info:
@@ -151,9 +147,7 @@ class TestModelSearchEndpoint:
 
             mock_client_instance = AsyncMock()
             mock_client_instance.get = AsyncMock(return_value=mock_response)
-            mock_client.return_value.__aenter__ = AsyncMock(
-                return_value=mock_client_instance
-            )
+            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)
             mock_client.return_value.__aexit__ = AsyncMock(return_value=None)
 
             with pytest.raises(HTTPException) as exc_info:
@@ -178,9 +172,7 @@ class TestModelSearchEndpoint:
 
             mock_client_instance = AsyncMock()
             mock_client_instance.get = AsyncMock(return_value=mock_response)
-            mock_client.return_value.__aenter__ = AsyncMock(
-                return_value=mock_client_instance
-            )
+            mock_client.return_value.__aenter__ = AsyncMock(return_value=mock_client_instance)
             mock_client.return_value.__aexit__ = AsyncMock(return_value=None)
 
             await models.search_models(request)

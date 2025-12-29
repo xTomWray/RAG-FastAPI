@@ -144,6 +144,22 @@ class Settings(BaseSettings):
         description="Cache TTL in seconds for model search results",
     )
 
+    # Reranker Configuration
+    enable_reranking: bool = Field(
+        default=False,
+        description="Enable cross-encoder reranking for improved search relevance",
+    )
+    reranker_model: str = Field(
+        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
+        description="HuggingFace model ID for cross-encoder reranking",
+    )
+    reranker_top_k: int = Field(
+        default=50,
+        ge=10,
+        le=200,
+        description="Number of initial results to rerank (higher = better quality, slower)",
+    )
+
     # GPU Safeguard Configuration
     enable_gpu_safeguards: bool = Field(
         default=True,
@@ -234,6 +250,28 @@ class Settings(BaseSettings):
     pdf_strategy: Literal["fast", "hi_res", "ocr_only"] = Field(
         default="fast",
         description="PDF processing strategy",
+    )
+
+    # 3GPP Document Processing Configuration
+    enable_3gpp_chunking: bool = Field(
+        default=False,
+        description="Use 3GPP-aware chunking for specification documents",
+    )
+    threegpp_max_chunk_size: int = Field(
+        default=1500,
+        ge=500,
+        le=4000,
+        description="Maximum chunk size for 3GPP documents",
+    )
+    threegpp_preserve_constructs: bool = Field(
+        default=True,
+        description="Keep if/else/when blocks, procedures, and timers intact",
+    )
+    threegpp_table_row_group_size: int = Field(
+        default=10,
+        ge=5,
+        le=50,
+        description="Maximum rows per table chunk before splitting",
     )
 
     # API Configuration

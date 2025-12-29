@@ -71,9 +71,7 @@ def _set_cache(key: str, data: list[ModelInfo]) -> None:
     """
     # Simple LRU: remove oldest entries if over limit
     if len(_model_search_cache) >= MAX_CACHE_SIZE:
-        oldest_key = min(
-            _model_search_cache.keys(), key=lambda k: _model_search_cache[k][0]
-        )
+        oldest_key = min(_model_search_cache.keys(), key=lambda k: _model_search_cache[k][0])
         del _model_search_cache[oldest_key]
 
     _model_search_cache[key] = (time.time(), data)
@@ -84,14 +82,16 @@ async def _search_huggingface_models(
     limit: int,
     filter_sentence_transformers: bool,
     sort: str,
+    model_type: str = "embedding",
 ) -> list[ModelInfo]:
     """Search HuggingFace Hub API for models.
 
     Args:
         query: Search query string.
         limit: Maximum results.
-        filter_sentence_transformers: Whether to filter by library.
+        filter_sentence_transformers: Whether to filter by model type.
         sort: Sort field (downloads, likes, lastModified).
+        model_type: Type of model to search for ("embedding" or "reranker").
 
     Returns:
         List of ModelInfo objects.
@@ -110,9 +110,13 @@ async def _search_huggingface_models(
     }
 
     if filter_sentence_transformers:
-        # Use pipeline_tag instead of library filter to catch all embedding models
-        # including Qwen, BGE, etc. that may use transformers library but support embeddings
-        params["pipeline_tag"] = "feature-extraction"
+        if model_type == "reranker":
+            # Cross-encoders typically use text-classification pipeline
+            # Also search with filter for cross-encoder tag
+            params["pipeline_tag"] = "text-classification"
+        else:
+            # Embedding models use feature-extraction pipeline
+            params["pipeline_tag"] = "feature-extraction"
 
     # Build headers with optional auth token
     headers: dict[str, str] = {}
@@ -131,6 +135,25 @@ async def _search_huggingface_models(
             response.raise_for_status()
 
             models_data = response.json()
+
+            # For rerankers, also filter for cross-encoder tag if filtering is enabled
+            if filter_sentence_transformers and model_type == "reranker":
+                # Include models that have cross-encoder in tags or name
+                filtered = []
+                for m in models_data:
+                    tags = m.get("tags", [])
+                    model_id = m.get("id", "").lower()
+                    # Keep if cross-encoder tag, or has reranker/cross-encoder in name
+                    if (
+                        "cross-encoder" in tags
+                        or "reranker" in model_id
+                        or "cross-encoder" in model_id
+                        or "bge-reranker" in model_id
+                    ):
+                        filtered.append(m)
+                # Fall back to all results if filter too strict
+                if filtered:
+                    models_data = filtered
 
             return [
                 ModelInfo(
@@ -248,6 +271,74 @@ async def search_models_get(
         sort=sort,
     )
     return await search_models(request)
+
+
+@router.get("/models/rerankers/search", response_model=ModelSearchResponse)
+async def search_reranker_models(
+    query: str = Query(
+        ..., min_length=1, max_length=200, description="Search query for reranker model names"
+    ),
+    limit: int = Query(default=10, ge=1, le=50, description="Maximum results to return"),
+    filter_rerankers: bool = Query(
+        default=True,
+        alias="filter_rerankers",
+        description="Filter to cross-encoder/reranker models",
+    ),
+    sort: str = Query(
+        default="downloads", description="Sort field: downloads, likes, lastModified"
+    ),
+) -> ModelSearchResponse:
+    """Search HuggingFace Hub for reranker/cross-encoder models (GET endpoint).
+
+    Cross-encoders process query-document pairs together for more accurate
+    relevance scoring. Popular models include ms-marco and BGE rerankers.
+
+    Args:
+        query: Search query for model names.
+        limit: Maximum results to return.
+        filter_rerankers: Filter to cross-encoder/reranker models.
+        sort: Sort field.
+
+    Returns:
+        ModelSearchResponse with matching models.
+    """
+    cache_key = _make_cache_key(query, limit, filter_rerankers, f"reranker:{sort}")
+
+    # Check cache first
+    cached_result = _get_from_cache(cache_key)
+    if cached_result is not None:
+        logger.debug("Cache hit for reranker model search: %s", query)
+        return ModelSearchResponse(
+            models=cached_result,
+            total=len(cached_result),
+            query=query,
+            cached=True,
+        )
+
+    # Fetch from HuggingFace API with reranker filter
+    models = await _search_huggingface_models(
+        query=query,
+        limit=limit,
+        filter_sentence_transformers=filter_rerankers,
+        sort=sort,
+        model_type="reranker",
+    )
+
+    # Cache the result
+    _set_cache(cache_key, models)
+
+    logger.info(
+        "Reranker model search completed: query=%s, results=%d",
+        query,
+        len(models),
+    )
+
+    return ModelSearchResponse(
+        models=models,
+        total=len(models),
+        query=query,
+        cached=False,
+    )
 
 
 @router.delete("/models/cache")

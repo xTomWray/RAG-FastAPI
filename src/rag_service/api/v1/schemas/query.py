@@ -24,6 +24,10 @@ class QueryRequest(BaseModel):
         default="documents",
         description="Collection to search in",
     )
+    rerank: bool | None = Field(
+        default=None,
+        description="Enable cross-encoder reranking (None uses config default)",
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -32,6 +36,7 @@ class QueryRequest(BaseModel):
                     "question": "How does MAVLink authentication work?",
                     "top_k": 5,
                     "collection": "documents",
+                    "rerank": True,
                 }
             ]
         }
